@@ -1,6 +1,8 @@
 import { readFile, readdir, access } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-for (const file of ['dist/index.html','dist/styles.css','api/workspace.js','supabase/migrations/001_workspace.sql']) await access(file);
+for (const file of ['dist/index.html','dist/styles.css','api/workspace.js','supabase/config.toml']) await access(file);
+const migrations = (await readdir('supabase/migrations')).filter(file=>file.endsWith('.sql')).sort();
+if (!migrations.length || migrations.some(file=>!/^\d{14}_[a-z0-9_]+\.sql$/.test(file))) throw new Error('Use Supabase CLI migration filenames.');
 for (const dir of ['dist','server','api']) {
   for (const file of await readdir(dir)) {
     if (!file.endsWith('.js')) continue;

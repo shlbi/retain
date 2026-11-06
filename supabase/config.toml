@@ -1,0 +1,26 @@
+# Initialized with Supabase CLI 3.0.0. The hosted project uses Postgres 17.
+# Production migrations deploy through the GitHub integration for main.
+# No [remotes] block: preserve the production project's dashboard settings.
+project_id = "retain"
+
+[api]
+enabled = true
+port = 54321
+# workspace_private must never be exposed through the Data API.
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+# New workspaces start empty; no demo accounts or calls are seeded.
+enabled = false
+sql_paths = []

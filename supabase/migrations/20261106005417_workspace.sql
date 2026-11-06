@@ -1,7 +1,6 @@
--- Run once with the Supabase database owner. The browser must never receive a
+-- Applied once by the Supabase GitHub migration runner. The browser must never receive a
 -- service/secret key. Only the server's service_role can execute the public RPCs.
 -- No Supabase Auth users or anonymous policies are involved in this application.
-begin;
 
 create schema if not exists workspace_private;
 revoke all on schema workspace_private from public, anon, authenticated, service_role;
@@ -485,4 +484,3 @@ grant execute on function public.workspace_restore(uuid,jsonb) to service_role;
 grant execute on function public.workspace_goal(uuid,text,integer) to service_role;
 grant execute on function public.workspace_import(uuid,jsonb) to service_role;
 
-commit;

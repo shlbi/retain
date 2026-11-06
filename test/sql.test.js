@@ -1,6 +1,6 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { DEFAULT_GOALS } from '../dist/model.js';
 import { MAX_BACKUP_BYTES } from '../dist/validation.js';
@@ -9,7 +9,11 @@ let db;
 before(async()=>{
   db = new PGlite();
   await db.exec('create role anon; create role authenticated; create role service_role;');
-  await db.exec(await readFile(new URL('../supabase/migrations/001_workspace.sql',import.meta.url),'utf8'));
+  const directory = new URL('../supabase/migrations/',import.meta.url);
+  for (const file of (await readdir(directory)).filter(file=>file.endsWith('.sql')).sort()) {
+    // Supabase's GitHub runner applies each migration in a transaction.
+    await db.exec('begin;\n' + await readFile(new URL(file,directory),'utf8') + '\ncommit;');
+  }
 });
 after(async()=>{ await db?.close(); });
 

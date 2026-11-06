@@ -27,7 +27,7 @@ The other rings show overall, internet, TV, home phone, single-play, double-play
 
 ## Setup
 
-See [DEPLOYMENT.md](DEPLOYMENT.md). The repository is ready for Vercel's GitHub integration; no manual deployment command is needed. The database migration and two server environment values must be configured once.
+See [DEPLOYMENT.md](DEPLOYMENT.md). Vercel deploys the app from GitHub, and the connected Supabase GitHub integration applies migrations from `supabase/migrations/`. Enable **Deploy to production** for `main` in Supabase. Two server environment values must be configured in Vercel once; neither deployment needs a manual command.
 
 Install the test dependency and run checks with Node.js 22:
 
