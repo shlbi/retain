@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2563a6">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="description" content="Track customer saves, service disconnects, mobile sales, and daily goals.">
+  <title>Call workspace</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main id="auth-view" class="auth-view" aria-labelledby="auth-title">
+    <section class="auth-card">
+      <div class="auth-symbol" aria-hidden="true"><svg viewBox="0 0 48 48"><circle class="auth-ring-track" cx="24" cy="24" r="17"/><circle class="auth-ring-progress" cx="24" cy="24" r="17"/><path d="m17 24 5 5 10-11"/></svg></div>
+      <h1 id="auth-title">Welcome back</h1>
+      <p id="auth-description" class="auth-description">Your calls and goals, across devices.</p>
+      <form id="auth-form" class="auth-form">
+        <div class="auth-field"><label for="username">Username</label><input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="64" placeholder="Your username"></div>
+        <div class="auth-field"><label for="password">Password</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024" placeholder="Your password"><button class="password-toggle" type="button" data-action="toggle-password" aria-label="Show password" aria-controls="password" aria-pressed="false">Show</button></div></div>
+        <p id="auth-error" class="auth-error" role="alert" hidden></p>
+        <button id="auth-submit" class="button primary auth-submit" type="submit">Sign in</button>
+      </form>
+      <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">Create an account</button>
+      <p id="auth-status" class="auth-status" role="status">Checking session…</p>
+      <noscript><p class="auth-error">Enable JavaScript to sign in and use your workspace.</p></noscript>
+    </section>
+    <p class="auth-footnote">A little progress, every conversation.</p>
+  </main>
+
+  <div id="workspace-view" hidden>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <aside class="sidebar">
+    <div class="workspace-label">YOUR WORKSPACE</div>
+    <nav class="desktop-nav" aria-label="Main navigation">
+      <button data-view="today" class="nav-item active" aria-label="Overview" title="Overview"><span data-icon="overview"></span>Overview</button>
+      <button data-view="calls" class="nav-item" aria-label="Call log" title="Call log"><span data-icon="calls"></span>Call log<span id="nav-count" class="nav-count">0</span></button>
+      <button data-view="goals" class="nav-item" aria-label="Daily goals" title="Daily goals"><span data-icon="target"></span>Daily goals</button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="demo-note"><span class="tiny-dot"></span>Saved to your account<p>Your calls and goals stay with you, across devices.</p></div>
+      <button class="quiet-button" data-action="backup"><span data-icon="download"></span>Download backup</button>
+      <button class="quiet-button help-button" data-action="help" aria-label="How it works" title="How it works"><span data-icon="help"></span>How it works</button>
+    </div>
+  </aside>
+
+  <div class="app-shell">
+    <header class="topbar">
+
+      <div class="breadcrumb">Workspace <span>/</span> <strong id="breadcrumb-label">Overview</strong></div>
+      <div class="topbar-right"><span class="storage-status" id="storage-status" role="status">Opening saved records…</span><span class="session-user" id="session-username" aria-label="Signed-in username"></span><button class="text-button desktop-sign-out" data-action="sign-out" aria-label="Sign out of your account">Sign out</button><button class="icon-button" data-action="help" aria-label="How it works"><span data-icon="help"></span></button></div>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <noscript><p class="storage-banner">JavaScript is required to use this tracker. Enable it and reload.</p></noscript>
+      <div id="storage-banner" class="storage-banner" role="alert" hidden></div>
+      <div class="page-heading"><div><p class="eyebrow" id="today-date"></p><h1 id="page-title">Your day, at a glance.</h1><p class="page-description" id="page-description">Every conversation counts. See how yours add up.</p></div><button class="button primary add-call" data-action="new-call"><span data-icon="plus"></span>Log a call <kbd>N</kbd></button></div>
+
+      <div class="date-control"><label for="report-date">Report date</label><input type="date" id="report-date"><button class="text-button" data-action="today">Today</button><span>Eastern time</span></div>
+      <section id="view-today" class="view">
+        <div class="summary-strip" id="summary-strip" aria-label="Today's call summary"></div>
+        <div class="overview-grid">
+          <section class="goals-panel panel" aria-labelledby="goals-title">
+            <div class="panel-heading"><div><h2 id="goals-title"><span id="goals-day-label">Today’s goals</span> <span class="info-trigger"><button class="icon-button small" data-action="help" aria-label="About goal calculations"><span data-icon="info"></span></button></span></h2><p>Small wins. Full circles.</p></div><button class="text-button" data-view="goals">Edit goals <span data-icon="arrow-up-right"></span></button></div>
+            <div class="rings-grid" id="rings-grid"></div>
+            <div class="goal-footer"><span id="goals-reached"></span><span>Daily progress · History retained</span></div>
+          </section>
+
+          <aside class="entry-column">
+            <div id="entry-backdrop" class="entry-backdrop" hidden></div>
+            <section class="entry-panel panel" id="entry-panel" aria-labelledby="entry-title">
+              <div class="sheet-handle"></div>
+              <div class="entry-heading"><div><span class="entry-icon" data-icon="calls"></span><h2 id="entry-title">Log a call</h2></div><button class="icon-button close-entry" data-action="close-entry" aria-label="Close call entry"><span data-icon="close"></span></button></div>
+              <p class="entry-subtitle">Add IDs if you have them. Tap the rest.</p>
+              <form id="call-form" novalidate>
+                <div class="input-stack"><label for="ucid">Call UCID <span class="optional-label">(optional)</span></label><input id="ucid" name="ucid" autocomplete="off" spellcheck="false" placeholder="Paste UCID, if available" maxlength="100"><label for="account">Account number <span class="optional-label">(optional)</span></label><input id="account" name="account" autocomplete="off" spellcheck="false" placeholder="Paste account number, if available" maxlength="100"></div>
+                <fieldset class="start-services"><legend>Services at the start</legend><div id="start-services" class="service-selector"></div></fieldset>
+                <fieldset class="end-services"><legend>What did they keep?<span>Tap to change</span></legend><div id="end-services"></div></fieldset>
+                <section class="mobile-orders-section" aria-labelledby="mobile-orders-title"><div class="mobile-orders-heading"><span class="sale-icon" data-icon="mobile"></span><div><h3 id="mobile-orders-title">Mobile orders</h3><p>1–12 mobiles per order</p></div></div><div id="mobile-orders" class="mobile-orders" aria-live="polite" aria-relevant="additions removals text"></div><button class="button secondary add-order" type="button" data-action="add-order"><span data-icon="plus"></span>Add mobile order</button></section>
+                <div class="outcome-preview" id="outcome-preview" aria-live="polite"></div>
+                <p id="form-error" class="form-error" role="alert" hidden></p>
+                <button class="button primary submit-call" type="submit"><span data-icon="check"></span><span id="submit-label">Save call</span></button>
+                <button class="text-button cancel-edit" type="button" data-action="cancel-edit" hidden>Cancel editing</button>
+                <p class="form-note"><span data-icon="lock"></span>Saved to your account</p>
+              </form>
+            </section>
+            <div class="next-win" id="next-win"></div>
+          </aside>
+        </div>
+
+        <section class="panel recent-panel" aria-labelledby="recent-title"><div class="panel-heading compact"><div><h2 id="recent-title">Recent calls <span id="recent-count" class="heading-count"></span></h2><p>The latest conversations in your day.</p></div><button class="text-button" data-view="calls">View all calls <span data-icon="arrow-right"></span></button></div><div id="recent-calls"></div></section>
+        <footer class="page-footer">Made for the space between calls.<span>Your progress, across devices</span></footer>
+      </section>
+
+      <section id="view-calls" class="view" hidden><div class="panel"><div class="call-toolbar"><button class="text-button all-history-btn" data-action="all-history" aria-pressed="false">All dates</button><div class="filter-tabs" id="call-filters" aria-label="Filter calls"><button data-filter="all" class="active">All calls</button><button data-filter="saved">Saves</button><button data-filter="disconnected">Disconnects</button><button data-filter="mobile">Mobile sold</button></div><button class="button secondary export-button" data-action="export"><span data-icon="download"></span>Export CSV</button></div><div id="all-calls"></div><div class="table-footer" id="table-footer"></div><div class="pagination" id="pagination"></div></div></section>
+
+      <section id="view-goals" class="view" hidden><div class="goals-settings panel"><div class="panel-heading"><div><h2>Make the goals yours</h2><p>Set the targets used for every report date.</p></div><span class="autosave-badge" id="goal-save-status">Starting targets</span></div><div id="goal-settings"></div><div class="settings-footer"><p>Goals change the rings, never your call outcomes.</p></div></div><div class="method-note panel"><span data-icon="info"></span><div><h3>A clear picture of your numbers</h3><p>Service saves use customers who had that service. Play saves use the matching outcome pair, like DPS ÷ (DPS + DPD). Mobile sales track both orders and total mobiles sold, divided by all logged calls. Triple-play groups three or more services.</p><button class="text-button" data-action="help">See the calculation rules <span data-icon="arrow-right"></span></button></div></div><div class="settings-card panel"><h2>Records &amp; backups</h2><p>Your records and goals are saved to your account, so you can continue on another device. Download a backup whenever you want a separate copy of your records.</p><div class="backup-actions"><button class="button secondary" data-action="backup"><span data-icon="download"></span>Download full backup</button><button class="button secondary" data-action="import">Restore a backup</button></div><p id="backup-status" class="text-muted">Restore a backup to merge records into your account. Conflicting entries are not overwritten.</p></div></section>
+    </main>
+  </div>
+
+  <nav class="mobile-nav" aria-label="Mobile navigation"><button data-view="today" class="active"><span data-icon="overview"></span>Overview</button><button data-view="calls"><span data-icon="calls"></span>Call log</button><button data-view="goals"><span data-icon="target"></span>Goals</button><button class="mobile-sign-out" data-action="sign-out" aria-label="Sign out of your account"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v16h4m5-12 4 4-4 4m-4-4h11"/></svg>Sign out</button></nav>
+  <input type="file" id="backup-input" accept="application/json,.json" hidden>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <dialog id="detail-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
+  </div>
+</body>
+</html>
