@@ -57,6 +57,8 @@ body{line-height:1.45}
 .badge.mobile{background:#edf1fc;color:#566daa}
 .badge.disconnect{background:#fff0e6;color:#985334}
 .badge.neutral{background:#edf2f8;color:#5e728a}
+.outcome-tags{display:inline-flex;flex-wrap:wrap;align-items:flex-start;gap:5px;max-width:100%}
+.outcome-tags .badge{max-width:100%;white-space:normal;line-height:1.35;text-align:left;overflow-wrap:anywhere}
 .outcome-preview{color:#62768e}
 .form-note{font-size:10px;color:#718299}
 .next-win,.next-win strong{color:#536c87}.next-win svg{color:#5488bf}

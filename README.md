@@ -14,6 +14,8 @@ Each mobile order contains **1–12 mobiles**. A call can include multiple separ
 
 The other rings show overall, internet, TV, home phone, single-play, double-play, and triple-play (3+) save rates. Saves use retained service count; full disconnects use starting service count. A 3-to-2 downgrade is DPS plus its disconnected service. Play rates use each outcome pair, such as DPS ÷ (DPS + DPD). TP groups three or four services. Daily reports use Eastern time. Goals are editable and are not official company targets.
 
+Mixed outcomes show the save code alongside a tag for each disconnected service (for example, **DPS** and **Internet disconnected**). They appear under both **Saves** and **Disconnects** in the call log. The same tags appear in recent calls, the entry preview, and call details.
+
 ## Accounts and storage
 
 - Username/password signup and sign-in; no email, password-complexity requirement, or verification step.
