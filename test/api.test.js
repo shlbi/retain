@@ -92,6 +92,26 @@ test('signup accepts a one-character password and stores only hashes with a secu
   assert.doesNotMatch(JSON.stringify(response.body),/password|scrypt|token/i);
 });
 
+test('registration enforces credential rules before writing to the database', async () => {
+  const db = fakeDatabase(), handler = createHandler({env:ENV, database:db});
+  for (const [username, password] of [['Peter', 'x'], ['7agent', 'x'], ['NineChars', 'x'], ['agent', 'ninechars']]) {
+    const response = await request(handler, {body:{action:'signup', username, password}});
+    assert.equal(response.status, 400);
+    assert.equal(response.body.error.code, 'VALIDATION');
+  }
+  assert.equal(db.calls.length, 0);
+});
+
+test('an existing account can still log in with credentials outside current signup rules', async () => {
+  const username = 'PreviousAgent', password = 'old long password';
+  const stored = {...USER_A, username, password_hash:await hashPassword(password)};
+  const db = fakeDatabase(), rpc = db.rpc.bind(db);
+  db.rpc = async (name, args) => name === 'auth_get_user' ? stored : rpc(name, args);
+  const response = await request(createHandler({env:ENV, database:db}), {body:{action:'login', username, password}});
+  assert.equal(response.status, 200);
+  assert.equal(response.body.user.username, username);
+});
+
 test('login uses identical public errors for unknown accounts and wrong passwords',async()=>{
   const password_hash=await hashPassword('x');
   for(const stored of [null,{...USER_A,password_hash}]){

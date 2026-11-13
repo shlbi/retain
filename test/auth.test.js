@@ -9,6 +9,18 @@ test('credentials allow one-character and whitespace passwords without a strengt
   for (const pair of [['','x'],['   ','x'],['a',''],['a'.repeat(65),'x'],['a','x'.repeat(1025)],[5,'x'],['a',5]]) assert.throws(()=>credentials(...pair));
 });
 
+test('signup validates trimmed usernames and counts Unicode characters in both fields', () => {
+  const username = '😀'.repeat(8), password = '🔒'.repeat(8);
+  assert.deepEqual(credentials(' ' + username + ' ', password, 'signup'), {username, password});
+  assert.deepEqual(credentials('Ap9', ' ', 'signup'), {username:'Ap9', password:' '});
+  for (const name of ['p', ' Peter ', '1agent', '٩agent', '   ', username + 'x', null]) {
+    assert.throws(() => credentials(name, password, 'signup'), /Username/);
+  }
+  for (const value of ['', password + 'x', '12345678\n', null]) {
+    assert.throws(() => credentials('agent', value, 'signup'), /Password/);
+  }
+});
+
 test('salted scrypt hashes differ and verify only the exact original password',async()=>{
   const first = await hashPassword('x'), second = await hashPassword('x');
   assert.notEqual(first,second);

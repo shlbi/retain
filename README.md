@@ -44,6 +44,8 @@ Supabase Postgres stores grouped daily history and goals for each signed-in user
 
 Each submission includes a random retry token so retrying the same submission cannot add it twice. The server applies the grouped changes and daily counters in one transaction. Account-level outcome groups and daily mobile totals retain no association with individual orders or calls in the history.
 
+Create a separate tracker username and password. Each can contain 1–8 characters. Usernames cannot start with a digit, `p` or `P`. Existing accounts can continue to sign in with their original credentials.
+
 The app uses its own username/password accounts and an HttpOnly session cookie. Passwords are salted and hashed with scrypt. The server connects to the private database through same-origin Vercel functions. Database credentials stay on the server.
 
 ## Setup

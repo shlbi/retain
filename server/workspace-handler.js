@@ -97,7 +97,7 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
       const db = database || createDatabase(env,fetchImpl);
       if (req.method === 'POST' && ['signup','login'].includes(body.action)) {
         let account;
-        try { account = credentials(body.username,body.password); } catch(error) { throw VALIDATION(error.message); }
+        try { account = credentials(body.username,body.password,body.action); } catch(error) { throw VALIDATION(error.message); }
         await authRateLimit(db,req,env,body.action,account.username);
         let user;
         if (body.action === 'signup') {

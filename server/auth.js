@@ -1,5 +1,6 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { signupRules } from '../dist/signup-rules.js';
 
 const derive = promisify(scrypt);
 const SCRYPT_OPTIONS = { N:32768, r:8, p:1, maxmem:64 * 1024 * 1024 };
@@ -9,10 +10,15 @@ export const SESSION_SECONDS = 30 * 24 * 60 * 60;
 // A nonexistent account still incurs the same scrypt work and constant-time comparison.
 const DUMMY_HASH = `scrypt$32768$8$1$${Buffer.alloc(16, 0x59).toString('hex')}$${Buffer.alloc(KEY_BYTES, 0xa7).toString('hex')}`;
 
-/** Keep the requested permissive credential policy without coercing non-text values. */
-export function credentials(username, password) {
-  if (typeof username !== 'string' || !username.trim() || Array.from(username.trim()).length > 64) throw new Error('Username must contain 1–64 characters.');
-  if (typeof password !== 'string' || password.length < 1 || Array.from(password).length > 1024) throw new Error('Password must contain 1–1024 characters.');
+/** Existing accounts keep the credential limits active when they registered. */
+export function credentials(username, password, action = 'login') {
+  if (action === 'signup') {
+    const errors = signupRules(username, password);
+    if (errors.username || errors.password) throw new Error(errors.username || errors.password);
+  } else {
+    if (typeof username !== 'string' || !username.trim() || Array.from(username.trim()).length > 64) throw new Error('Username must contain 1–64 characters.');
+    if (typeof password !== 'string' || password.length < 1 || Array.from(password).length > 1024) throw new Error('Password must contain 1–1024 characters.');
+  }
   return { username:username.trim(), password };
 }
 

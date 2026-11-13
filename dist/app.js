@@ -3,6 +3,7 @@ import { tallyForCall, metricsForDay } from './tally.js';
 import { createTallyEntry } from './entry-tally.js';
 import { groupedRows, groupedTable, groupedCsv } from './tally-history.js';
 import { openStore, apiRequest, validDay } from './storage.js';
+import { signupRules } from './signup-rules.js';
 
 const paths = {
   overview:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -266,6 +267,14 @@ function renderAuth() {
   $('auth-submit').textContent = signup ? 'Create account' : 'Sign in';
   $('auth-mode-toggle').textContent = signup ? 'Back to sign in' : 'Create an account';
   $('password').autocomplete = signup ? 'new-password' : 'current-password';
+  for (const name of ['username', 'password']) {
+    const input = $(name);
+    const rule = $(name + '-rule');
+    rule.hidden = !signup;
+    input.removeAttribute('aria-invalid');
+    if (signup) input.setAttribute('aria-describedby', rule.id);
+    else input.removeAttribute('aria-describedby');
+  }
   setPasswordVisible(false);
   authMessage('');
 }
@@ -283,7 +292,46 @@ async function enterWorkspace(user){
  setBusy(false);
  await syncFromStorage();
 }
-async function submitAuth(event){event.preventDefault();if(authBusy)return;authenticating=true;sessionRequest++;authMessage('');setAuthBusy(true);try{const result=await apiRequest(authMode,{username:$('username').value,password:$('password').value});$('password').value='';await enterWorkspace(result.user);channel?.postMessage({sessionChanged:true});}catch(e){authMessage(e.message||'Could not sign in. Please try again.');}finally{authenticating=false;setAuthBusy(false);}}
+async function submitAuth(event) {
+  event.preventDefault();
+  if (authBusy) return;
+  const username = $('username').value;
+  const password = $('password').value;
+  authMessage('');
+  if (authMode === 'signup') {
+    const errors = signupRules(username, password);
+    const firstInvalid = errors.username ? 'username' : errors.password ? 'password' : null;
+    for (const name of ['username', 'password']) {
+      const input = $(name);
+      if (name === firstInvalid) {
+        input.setAttribute('aria-invalid', 'true');
+        input.setAttribute('aria-describedby', name + '-rule auth-error');
+      } else {
+        input.removeAttribute('aria-invalid');
+        input.setAttribute('aria-describedby', name + '-rule');
+      }
+    }
+    if (firstInvalid) {
+      authMessage(errors[firstInvalid]);
+      $(firstInvalid).focus();
+      return;
+    }
+  }
+  authenticating = true;
+  sessionRequest++;
+  setAuthBusy(true);
+  try {
+    const result = await apiRequest(authMode, {username, password});
+    $('password').value = '';
+    await enterWorkspace(result.user);
+    channel?.postMessage({sessionChanged:true});
+  } catch (error) {
+    authMessage(error.message || 'Could not sign in. Please try again.');
+  } finally {
+    authenticating = false;
+    setAuthBusy(false);
+  }
+}
 async function signOut(){if(busy)return;if(entry.dirty()){showDialog('Sign out?',`<p>You have an unfinished call. Signing out discards this entry.</p><div class="dialog-actions"><button class="button secondary" data-action="close-dialog">Keep editing</button><button class="button primary" data-action="confirm-sign-out">Sign out</button></div>`);return;}await finishSignOut();}
 async function finishSignOut(){authenticating=true;sessionRequest++;try{await apiRequest('logout',{});showSignIn();channel?.postMessage({sessionChanged:true});}catch(e){storageError(e.message||'Could not sign out. Try again.');}finally{authenticating=false;}}
 async function checkSession(){if(authenticating)return;const epoch=sessionEpoch,request=++sessionRequest;try{const {user}=await apiRequest();if(epoch!==sessionEpoch||request!==sessionRequest)return;if(user){if(!sessionUser||user.id!==sessionUser.id){showSignIn();await enterWorkspace(user);}else await syncFromStorage();}else if(sessionUser)showSignIn('Your session ended. Sign in again.');else{$('auth-status').textContent='';setAuthBusy(false);}}catch(e){if(epoch!==sessionEpoch||request!==sessionRequest)return;if(!sessionUser){$('auth-status').textContent='';authMessage(e.message);setAuthBusy(false);}else storageError(e.message);}}
@@ -294,6 +342,13 @@ document.addEventListener('click',event=>{onClick(event).catch(e=>storageError(e
 document.addEventListener('keydown',onKeydown);
 
 $('auth-form').addEventListener('submit',submitAuth);
+$('auth-form').addEventListener('input', ({target}) => {
+  if (target.getAttribute('aria-invalid') === 'true') {
+    target.removeAttribute('aria-invalid');
+    target.setAttribute('aria-describedby', target.name + '-rule');
+    authMessage('');
+  }
+});
 $('auth-mode-toggle').addEventListener('click',()=>{authMode=authMode==='login'?'signup':'login';renderAuth();});
 window.addEventListener('session-expired',event=>{if(event.detail?.userId===sessionUser?.id)showSignIn('Your session changed or expired. Sign in again.');});
 $('report-date').addEventListener('change',event=>{const value=event.target.value;if(validDay(value)&&value<=dayKey()){selectedDay=value;allHistory=false;page=0;renderDashboard();}});

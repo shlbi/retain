@@ -23,19 +23,22 @@
       </div>
       <section class="auth-card" aria-labelledby="auth-title">
         <h1 id="auth-title">Welcome back</h1>
-        <form id="auth-form" class="auth-form">
+        <p id="credential-notice" class="credential-notice"><span data-icon="lock" aria-hidden="true"></span>you can not use your spectrum credentials</p>
+        <form id="auth-form" class="auth-form" aria-describedby="credential-notice">
           <div class="auth-field">
             <label for="username">Username</label>
-            <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="64">
+            <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+            <p id="username-rule" class="auth-rule" hidden>Up to 8 characters. The first character cannot be a number or the letter P.</p>
           </div>
           <div class="auth-field">
             <label for="password">Password</label>
             <div class="password-field">
-              <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024">
+              <input id="password" name="password" type="password" autocomplete="current-password" required>
               <button class="password-toggle" type="button" data-action="toggle-password" aria-label="Show password" aria-controls="password" aria-pressed="false">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="M3 3l18 18"/></svg>
               </button>
             </div>
+            <p id="password-rule" class="auth-rule" hidden>Up to 8 characters.</p>
           </div>
           <p id="auth-error" class="auth-error" role="alert" hidden></p>
           <button id="auth-submit" class="auth-submit" type="submit">Sign in</button>
