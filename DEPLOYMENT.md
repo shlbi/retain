@@ -2,17 +2,29 @@
 
 Vercel deploys this repository automatically after GitHub pushes. The app includes `vercel.json`, the static frontend in `dist/`, and the server endpoint in `api/workspace.js`. Keep the Vercel project root at the repository root; do not set its root to `dist/`.
 
-## 1. Deploy the database schema from GitHub
+## 1. Upgrade Supabase before enabling the new app
 
-The Supabase project **retain** is connected to **shlbi/retain**. In Supabase → Project Settings → Integrations → GitHub, use working directory **`.`**, production branch **`main`**, and enable **Deploy to production**. The working directory is the parent of `supabase/`, not `supabase/` itself.
+Apply the checked-in migrations from `supabase/migrations/` in filename order. The initial migration creates the workspace, the next introduces multi-account outcomes, and the grouped tally migration installs the new reporting functions and converts historical data. Existing projects should apply only versions missing from their migration history.
 
-On each push to `main`, Supabase applies unapplied SQL files from `supabase/migrations/` and records their versions. No separate GitHub Action or manual SQL-editor execution is needed. Check the Supabase deployment status after pushing; the GitHub test job only validates the app, not the hosted database deployment.
+For the GitHub integration, use repository **shlbi/retain**, working directory **.**, production branch **main**, and enable **Deploy to production**. Check the production database's applied migration history. Supabase and Vercel run independently. A successful Vercel deployment establishes only that the website built. If it goes live first, complete the database migration before agents resume logging.
 
-Keep applied migration files unchanged. For future schema changes, run `supabase migration new descriptive_name`, put the SQL in the generated file, test it, and commit it. Never rerun the initial schema in the SQL editor or rename a migration already recorded by Supabase. The initial migration creates the tables and functions. The follow-up account outcomes and callbacks migration updates validation and the bundle goal. Existing single-account records remain readable and are scored from their original and kept services.
+The cutover backfills daily tallies from existing calls and restricts the old raw-record functions. Agents with the old page open should refresh before continuing. Confirm that migration `20261113033103_grouped_tallies.sql` is recorded and both functions exist. This read-only SQL checks the production installation without reading user data.
 
-This app uses Supabase **Postgres**, with its own username/password authentication. It does not create Supabase Auth users, so email confirmation settings and Supabase Auth password rules do not affect signup. Data is stored in a private schema; public RPC functions are executable only by `service_role`. The browser cannot call those functions directly.
+```sql
+select
+  exists (
+    select 1 from supabase_migrations.schema_migrations
+    where version = '20261113033103'
+  ) as migration_recorded,
+  to_regprocedure('public.workspace_tally(uuid,date,jsonb,uuid)') is not null as tally_write_ready,
+  to_regprocedure('public.workspace_tally_state(uuid)') is not null as tally_read_ready;
+```
 
-For an existing deployment, verify that Supabase lists migration versions `20261106005417` and `20261113022327` before saving a call with extra accounts, added services, or a callback. The second version is the upgrade for a database already initialized with the first migration.
+All three columns should be true. Complete the synthetic checks below before resuming use.
+
+Original legacy rows remain private after backfill. Evaluate their retention separately, including any admin backups and earlier CSV or JSON downloads. The new release serves grouped records through its authenticated API. Full-record export, restore and callback scheduling belong to the retired version.
+
+This app uses Supabase Postgres with its own username/password authentication. Supabase Auth email settings do not affect signup.
 
 ## 2. Set Vercel server environment variables
 
@@ -33,24 +45,16 @@ Use separate Supabase projects for production and previews if preview builds sho
 
 ## 3. Verify the configured app
 
-- Create an account with a username and a simple password. There is no email step.
-- Save a call with both IDs blank. Reload and confirm it remains saved.
-- Start a triple-play account with Internet, Video and Voice. Keep Video and Voice. Confirm **TP → DP** and an Internet disconnect in the call log. The service rings include the account and the play and bundle rings exclude it.
-- On another call, add a second account with the same original services as the first. Keep all originals on one and disconnect all on the other. Confirm the wash and check that the call contributes once to the sales denominator.
-- Add mobile service and one order with 3 mobiles. Confirm one mobile service save, one order, and three sold lines.
-- Schedule a callback with a note. Check that Cancel leaves the change unscheduled and Yes lets you save it. Reopen the app after the due time and confirm the reminder and note are available.
-- Sign in from another browser/device and confirm the same records.
-- Sign out and create a different account. It must start with no calls.
-- Try a stale edit from a second tab, export/restore a backup, and check phone layout.
+Use a test workspace and synthetic selections for these checks.
 
-Without the Supabase variables or migration, the app shows a setup/storage error and does not pretend to save records locally.
+1. Sign up and record a call that starts with Internet and Video and keeps Internet. Confirm the row shows **DP → SP**, **Internet kept**, **Video disconnected** and **1 account**.
+2. Save the same combination as a second call. Refresh, then sign in on another device. Confirm a single matching row shows **2 accounts** and the call counter shows **2**.
+3. Log two accounts on one call with identical starting services. Keep every original service on one account and disconnect every original service on the other. Confirm that the resulting rows carry the **Wash** tag and that call count increases by one.
+4. Log one mobile order with three lines. Confirm the daily mobile row gains one order and three lines. Adding Mobile as an account service also gives that service one save.
+5. Export the grouped report. Check that rows contain the expected dates, service tags and account or sales counts. Sign in to a different fresh workspace and verify its totals start empty.
 
-## Existing browser-local records
-
-Before replacing the previous local-only version, download its JSON backup. After signing in to the new version, use **How your numbers work → Restore backup**. Review the restored count. The app never uploads another browser user's local database automatically.
-
-Cloud records belong to the Supabase project and account, so a domain change does not move or erase them. Sign in again on the new domain. Keep the same Supabase configuration to access the same data.
+Production history resides in Supabase. A browser refresh before submitting discards the current form. After a confirmed save, refreshing reloads the grouped totals. When storage cannot confirm a submission, check the current totals or use the retry action on the pending form before starting a new entry.
 
 ## Operational notes
 
-The application includes hashed passwords, persistent authentication rate limits, expiring/revocable sessions, same-origin request checks, private database tables, per-account ownership, and optimistic concurrency checks. There is no email-based password reset, administrative UI, or Spectrum account lookup. Manage database backups and trusted operator access in your Supabase project. Never expose the server secret key in frontend code.
+The API uses expiring sessions, salted password hashes, rate limits and atomic per-user database operations. The app has no email password-reset or administrative interface. Manage database backups and trusted operator access in Supabase. Keep server keys out of the frontend and source control.

@@ -1,9 +1,10 @@
 import { DEFAULT_GOALS } from '../dist/model.js';
-import { validateCall, validateGoals, validateBackup, MAX_BACKUP_CALLS, StorageError } from '../dist/validation.js';
+import { StorageError } from '../dist/validation.js';
+import { validateDayTotals, validateTallyState, validateTallyUpdate } from '../dist/tally-validation.js';
 import { credentials, hashPassword, verifyPassword, tokenHash, newSession, sessionToken, sessionCookie, SESSION_SECONDS } from './auth.js';
 import { ApiError, createDatabase } from './database.js';
 
-const ACTION_FIELDS = {signup:['username','password'],login:['username','password'],logout:[],save:['call','expectedRevision'],remove:['id','expectedRevision'],restore:['call'],goal:['key','value'],import:['backup']};
+const ACTION_FIELDS = {signup:['username','password'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value']};
 export const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const VALIDATION = message => new ApiError(400,'VALIDATION',message);
 
@@ -74,14 +75,10 @@ async function authRateLimit(db,req,env,action,username) {
 /** Return only the public identity fields, never a stored hash or session record. */
 function publicUser(value) { return value && typeof value.id === 'string' && typeof value.username === 'string' ? {id:value.id,username:value.username} : null; }
 async function currentUser(db,req) { const token = sessionToken(header(req,'cookie')); return token ? publicUser(await db.rpc('auth_session',{p_token_hash:tokenHash(token)})) : null; }
-function expectedRevision(value, nullable = false) { if (nullable && value === null) return null; if (!Number.isSafeInteger(value) || value < 1) throw VALIDATION('Supply the record revision you reviewed.'); return value; }
-function recordId(value) { if (typeof value !== 'string' || !value.trim() || value.trim().length > 100 || /\p{C}/u.test(value)) throw VALIDATION('Choose a valid call record.'); return value.trim(); }
-
-/** Validate the persisted snapshot before returning it to browser calculations. */
-function safeState(state) {
-  if (!state || state.version !== 3 || !Array.isArray(state.calls) || state.calls.length > MAX_BACKUP_CALLS) throw new ApiError(503,'STORAGE','Saved records could not be read safely.');
-  try { return {version:3,calls:state.calls.map(call=>validateCall(call,{allowLegacy:false})),goals:validateGoals(state.goals)}; }
-  catch { throw new ApiError(503,'STORAGE','Saved records could not be read safely.'); }
+/** A schema mismatch must never expose unvalidated columns or legacy identifiers. */
+function safeResult(value, validate) {
+  try { return validate(value); }
+  catch { throw new ApiError(503,'STORAGE','The saved tallies could not be read safely.'); }
 }
 
 /** Dependency injection makes authorization and HTTP behavior testable without real credentials. */
@@ -133,22 +130,28 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
       }
       if (!user) throw new ApiError(401,'AUTH','Sign in to open your saved records.');
       if (header(req,'x-workspace-user') !== user.id) throw new ApiError(401,'AUTH','Your session changed. Sign in again.');
-      if (req.method === 'GET') return send(200,safeState(await db.rpc('workspace_state',{p_user_id:user.id})));
+      if (req.method === 'GET') return send(200,safeResult(await db.rpc('workspace_tally_state',{p_user_id:user.id}),validateTallyState));
       let result;
       switch (body.action) {
-        case 'save': result = await db.rpc('workspace_save',{p_user_id:user.id,p_call:validateCall(body.call,{allowLegacy:false}),p_expected_revision:expectedRevision(body.expectedRevision,true)}); break;
-        case 'remove': result = await db.rpc('workspace_remove',{p_user_id:user.id,p_id:recordId(body.id),p_expected_revision:expectedRevision(body.expectedRevision)}); break;
-        case 'restore': result = await db.rpc('workspace_restore',{p_user_id:user.id,p_call:validateCall(body.call,{allowLegacy:false})}); break;
+        case 'tally': {
+          const {day, delta, requestId} = validateTallyUpdate(body.day,body.delta,body.requestId);
+          result = safeResult(await db.rpc('workspace_tally',{
+            p_user_id:user.id,p_day:day,p_delta:delta,p_request_id:requestId
+          }),validateDayTotals);
+          if (result.day !== day) throw new ApiError(503,'STORAGE','Could not confirm the saved day.');
+          break;
+        }
         case 'goal': {
           if (!Object.hasOwn(DEFAULT_GOALS,body.key) || !Number.isInteger(body.value) || body.value < 5 || body.value > 100) throw VALIDATION('Choose a known goal and a whole percentage from 5 to 100.');
-          result = await db.rpc('workspace_goal',{p_user_id:user.id,p_key:body.key,p_value:body.value}); break;
+          result = await db.rpc('workspace_goal',{p_user_id:user.id,p_key:body.key,p_value:body.value});
+          if (result !== body.value) throw new ApiError(503,'STORAGE','Could not confirm the saved target.');
+          break;
         }
-        case 'import': result = await db.rpc('workspace_import',{p_user_id:user.id,p_backup:validateBackup(body.backup)}); break;
         default: throw VALIDATION('Choose a supported action.');
       }
       return send(200,result);
     } catch(error) {
-      const problem = error instanceof ApiError ? error : error instanceof StorageError ? new ApiError(error.code === 'CONFLICT' || error.code === 'DUPLICATE' ? 409 : 400,error.code,error.message) : new ApiError(503,'STORAGE','The server could not confirm this operation. Reload your saved records before retrying.');
+      const problem = error instanceof ApiError ? error : error instanceof StorageError ? new ApiError(error.code === 'CONFLICT' || error.code === 'DUPLICATE' ? 409 : 400,error.code,error.message) : new ApiError(503,'STORAGE','The server could not confirm this operation. Try the same operation again.');
       if (problem.status === 429) res.setHeader('Retry-After','900');
       return send(problem.status,{error:{code:problem.code,message:problem.message}});
     }

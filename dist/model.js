@@ -118,31 +118,26 @@ export function successesNeeded(successes, opportunities, targetPercent) {
   return Math.max(0, Math.ceil((target * opportunities - successes) / (1 - target) - 1e-9));
 }
 
-/** Count service and bundle results per account, and overall saves and sales per call. */
-export function calculateMetrics(calls, goals = DEFAULT_GOALS) {
+/** Score a day using group counts, including any service added on a washed account. */
+export function metricsFromGroups(groups, totals, goals = DEFAULT_GOALS) {
   const counts = Object.fromEntries(METRICS.map(metric => [metric.key, { successes: 0, total: 0 }]));
-  function count(key, successes) {
-    counts[key].total++;
-    counts[key].successes += Number(successes);
+  counts.overall = { successes: totals.savedCalls, total: totals.eligibleCalls };
+  counts.orders = { successes: totals.mobileOrders, total: totals.calls };
+  counts.sales = { successes: totals.mobileLines, total: totals.calls };
+  function count(key, saved, quantity) {
+    counts[key].total += quantity;
+    if (saved) counts[key].successes += quantity;
   }
-  for (const call of calls) {
-    const outcomes = outcomesForCall(call);
-    if (!outcomes.length) continue;
-    count('orders', soldOrdersFor(call));
-    count('sales', soldLinesFor(call));
-    const unpaired = outcomes.filter(outcome => !outcome.washed);
-    if (unpaired.length) count('overall', unpaired.some(outcome => outcome.saved));
-
-    for (const outcome of outcomes) {
-      for (const service of outcome.added) count(service, true);
-    }
-    for (const outcome of unpaired) {
-      for (const service of outcome.kept) count(service, true);
-      for (const service of outcome.disconnected) count(service, false);
-      if (outcome.kind === 'downgrade') continue;
-      count(PLAY_NAMES[outcome.tier].toLowerCase(), outcome.saved);
-      if (outcome.tier >= 2) count('bundle', outcome.saved);
-    }
+  for (const group of groups) {
+    const outcome = classifyAccount(group);
+    if (!outcome) continue;
+    for (const service of outcome.added) count(service, true, group.count);
+    if (group.washed) continue;
+    for (const service of outcome.kept) count(service, true, group.count);
+    for (const service of outcome.disconnected) count(service, false, group.count);
+    if (outcome.kind === 'downgrade') continue;
+    count(PLAY_NAMES[outcome.tier].toLowerCase(), outcome.saved, group.count);
+    if (outcome.tier >= 2) count('bundle', outcome.saved, group.count);
   }
   return METRICS.map(metric => {
     const { successes, total } = counts[metric.key];
@@ -153,6 +148,23 @@ export function calculateMetrics(calls, goals = DEFAULT_GOALS) {
     const opportunityUnit = ['overall', 'sales', 'orders'].includes(metric.key) ? 'call' : 'account';
     return { ...metric, successes, total, opportunityUnit, rate, goal, progress, needed: successesNeeded(successes, total, goal), reached: total > 0 && rate >= goal - 1e-8 };
   });
+}
+
+/** Convert legacy call records to the same scoring inputs as saved daily groups. */
+export function calculateMetrics(calls, goals = DEFAULT_GOALS) {
+  const groups = [];
+  const totals = { calls: 0, eligibleCalls: 0, savedCalls: 0, mobileOrders: 0, mobileLines: 0 };
+  for (const call of calls) {
+    const outcomes = outcomesForCall(call);
+    if (!outcomes.length) continue;
+    for (const outcome of outcomes) groups.push({ ...outcome, count: 1 });
+    totals.calls++;
+    totals.eligibleCalls += Number(outcomes.some(outcome => !outcome.washed));
+    totals.savedCalls += Number(outcomes.some(outcome => !outcome.washed && outcome.saved));
+    totals.mobileOrders += soldOrdersFor(call);
+    totals.mobileLines += soldLinesFor(call);
+  }
+  return metricsFromGroups(groups, totals, goals);
 }
 
 /** Assign records and daily reporting to the agent's Eastern working day. */

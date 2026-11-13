@@ -1,10 +1,10 @@
 # Call workspace
 
-A blue, unbranded call outcome tracker for desktop and phone. Sign in with a username and password, tap the service outcomes, and log the call. UCID and account number are optional.
+A responsive tracker for call outcomes, mobile sales and daily goals. Sign in with a username and password, tap the account outcomes and save. Each successful save updates your grouped daily totals in Supabase.
 
 ## Logging and scoring a call
 
-Enter the original services for each customer account, mark the services kept, and select any services added during the call. Use **Add another account** for a second or subsequent account handled on the same call. Each account has its own optional account number. The call has one optional UCID and one set of mobile orders.
+Select the original services, mark the services kept, and select any additions. Use **Add another account** for each additional account handled during the call. Enter mobile orders once for the entire call. Entry uses fixed choices. UCIDs, customer account numbers, callback reminders and free-text notes have been retired.
 
 | Account outcome | History tag | Rates affected |
 | --- | --- | --- |
@@ -24,26 +24,31 @@ A **wash** pairs two accounts on the same call that started with exactly the sam
 
 Each mobile order contains **1–12 mobiles**. A call can contain multiple orders. Across ten calls, one order for three mobiles gives a **10% order rate** and a **30% line rate**. Every call contributes once to each sales denominator, including calls with several customer accounts or a wash. Adding mobile service to an account earns one mobile service save. Record the sold lines in the mobile order controls.
 
-Daily reports use Eastern time. Goals are editable. Existing single-account records and imported history use the same scoring rules.
+Daily reports use Eastern time. Each ring shows progress against its editable goal.
 
-### Callback reminders
+### Grouped history
 
-Choose a callback date and time, add an optional note, and confirm that your supervisor approved the callback. Save the call to keep its reminder. The workspace shows due callbacks while it is open and checks for overdue callbacks when you return.
+Each report date has one row per combination of outcome and service tags. Identical account outcomes increase the count on that row. A separate mobile sales row records the total number of orders and lines for that date.
+
+| Outcome tags | Count |
+| --- | --- |
+| DP → SP · Internet kept · Video disconnected | 8 accounts |
+| SPS · Internet kept | 11 accounts |
+| Mobile sold | 6 orders · 9 lines |
+
+The account counts and the sales counts use different units. For example, a call handling two accounts can increase two account counts, but still increases the daily call count by one. The grouped CSV includes the report date, outcome, service changes and counts in the chosen view.
 
 ## Accounts and storage
 
-- Username/password signup and sign-in; no email, password-complexity requirement, or verification step.
-- Any nonempty password is accepted. Usernames are trimmed and case-insensitive; a username must be available.
-- Passwords use salted scrypt hashes. Random session tokens are stored only as digests in the database and sent in HttpOnly, SameSite cookies.
-- Records and goals are stored in Supabase Postgres and isolated by account. Use the same account on another device to access them.
-- Same-origin Vercel server functions handle every database operation. Supabase secrets never reach the browser. Private database tables have RLS enabled and deny direct access; only explicitly granted server RPCs can read/write them.
-- Concurrent edits are revision-checked. Duplicate nonblank UCIDs are rejected per account. Blank IDs may occur on any number of calls.
-- Changes refresh on focus and every 30 seconds while visible. A failed request never falls back to a separate local database.
-- There is no email recovery flow. Keep the username and password; a trusted operator can arrange password recovery separately.
+Supabase Postgres stores grouped daily history and goals for each signed-in user. After a confirmed save, refreshing, reopening the site or signing in on another device loads those totals. The browser holds only the displayed view and unfinished selections in memory. A refresh clears an unsaved form. There is no browser database, offline queue or end-of-shift save step.
+
+Each submission includes a random retry token so retrying the same submission cannot add it twice. The server applies the grouped changes and daily counters in one transaction. Account-level outcome groups and daily mobile totals retain no association with individual orders or calls in the history.
+
+The app uses its own username/password accounts and an HttpOnly session cookie. Passwords are salted and hashed with scrypt. The server connects to the private database through same-origin Vercel functions. Database credentials stay on the server.
 
 ## Setup
 
-See [DEPLOYMENT.md](DEPLOYMENT.md). Vercel deploys the app from GitHub, and the connected Supabase GitHub integration applies migrations from `supabase/migrations/`. Enable **Deploy to production** for `main` in Supabase. Two server environment values must be configured in Vercel once; neither deployment needs a manual command.
+Follow the [deployment guide](DEPLOYMENT.md) to upgrade Supabase before enabling the new frontend and API. Vercel builds the repository from its root.
 
 Install the test dependency and run checks with Node.js 22:
 
@@ -55,10 +60,6 @@ npm run build
 
 There are no runtime npm dependencies. To run locally with an already configured Supabase project, supply the environment values in `.env.example` to your shell, then run `npm run dev`. The local server prints its URL. It does not automatically load `.env` files; Node's `--env-file` option can be used: `node --env-file=.env.local scripts/dev-server.mjs`.
 
-## Backups and limits
+## Earlier records
 
-Export CSV for reporting or download a JSON backup for a full restore. Open **How your numbers work → Restore backup** and select the JSON file. Restore merges records atomically, skips identical entries, and rejects conflicts without overwriting them. Backups include customer account details, any entered identifiers, and saved callback notes.
-
-Version 2 backups with 0–12 mobiles on a call migrate to zero or one order. Legacy counts over 12 cannot reveal the number of orders and must be corrected into actual order quantities before import; the app never invents an order split. Version 3 preserves every order quantity.
-
-The workspace supports at most 10,000 calls and a 3 MiB serialized snapshot; requests have a 4 MiB application limit. Each call supports up to 20 separate mobile orders as an input bound. These bounds keep responses below Vercel's function payload limit. Export a backup before removing old records when capacity is reached.
+The database upgrade converts historical records in Supabase to grouped daily counts. Original legacy records remain in private database storage for operator-managed retention. The current app exposes only grouped counts, and the former raw-call JSON export and restore flows have been retired. Previously downloaded files and database backups may still contain customer details.

@@ -10,7 +10,7 @@
   <title>Call workspace</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="callbacks.css">
+  <link rel="stylesheet" href="tally-history.css">
   <link rel="stylesheet" href="entry.css">
   <link rel="stylesheet" href="auth.css">
   <script type="module" src="app.js"></script>
@@ -58,7 +58,6 @@
     </nav>
     <div class="sidebar-bottom">
       <div class="demo-note"><span class="tiny-dot"></span>Saved to your account<p>Your calls and goals stay with you, across devices.</p></div>
-      <button class="quiet-button" data-action="backup"><span data-icon="download"></span>Download backup</button>
       <button class="quiet-button help-button" data-action="help" aria-label="How it works" title="How it works"><span data-icon="help"></span>How it works</button>
     </div>
   </aside>
@@ -73,7 +72,6 @@
     <main id="main" tabindex="-1">
       <noscript><p class="storage-banner">JavaScript is required to use this tracker. Enable it and reload.</p></noscript>
       <div id="storage-banner" class="storage-banner" role="alert" hidden></div>
-      <div id="callback-due-alert" class="callback-alert" hidden><strong id="callback-due-message" role="status"></strong><button type="button" class="text-button" data-action="review-callbacks">View reminders <span data-icon="arrow-right"></span></button></div>
       <div class="page-heading"><div><p class="eyebrow" id="today-date"></p><h1 id="page-title">Your day, at a glance.</h1><p class="page-description" id="page-description">Every conversation counts. See how yours add up.</p></div><button class="button primary add-call" data-action="new-call"><span data-icon="plus"></span>Log a call <kbd>N</kbd></button></div>
 
       <div class="date-control"><label for="report-date">Report date</label><input type="date" id="report-date"><button class="text-button" data-action="today">Today</button><span>Eastern time</span></div>
@@ -91,54 +89,41 @@
             <section class="entry-panel panel" id="entry-panel" aria-labelledby="entry-title">
               <div class="sheet-handle"></div>
               <div class="entry-heading"><div><span class="entry-icon" data-icon="calls"></span><h2 id="entry-title">Log a call</h2></div><button class="icon-button close-entry" data-action="close-entry" aria-label="Close call entry"><span data-icon="close"></span></button></div>
-              <p class="entry-subtitle">Add IDs if you have them. Tap the rest.</p>
+              <p class="entry-subtitle">Choose the services and outcome for this call.</p>
               <form id="call-form" novalidate>
-                <div class="input-stack"><label for="ucid">Call UCID <span class="optional-label">(optional)</span></label><input id="ucid" name="ucid" autocomplete="off" spellcheck="false" placeholder="Paste UCID, if available" maxlength="100"></div>
                 <div id="account-switcher" class="account-switcher" hidden>
                   <label for="account-select">Account on this call</label>
-                  <div><select id="account-select"></select><button type="button" class="text-button" data-action="remove-account" aria-label="Remove selected account">Remove</button></div>
+                  <div><select id="account-select"></select><button type="button" class="text-button" data-action="remove-account">Remove account</button></div>
                 </div>
-                <div class="input-stack account-identifier"><label for="account">Account number <span class="optional-label">(optional)</span></label><input id="account" name="account" autocomplete="off" spellcheck="false" placeholder="Paste account number, if available" maxlength="100"></div>
                 <fieldset class="start-services"><legend>Services at the start</legend><div id="start-services" class="service-selector"></div></fieldset>
-                <fieldset class="end-services"><legend>What did they keep?<span>Tap to change</span></legend><div id="end-services"></div></fieldset>
+                <fieldset class="end-services"><legend>What did they keep?</legend><div id="end-services"></div></fieldset>
                 <details class="added-services" id="added-services-section" hidden><summary>Services added <span id="added-count"></span></summary><div id="added-services" class="added-options" role="group" aria-label="Services added during this call"></div></details>
                 <button type="button" class="text-button add-an-account" data-action="add-account"><span data-icon="plus"></span>Add another account</button>
-                <section class="mobile-orders-section" aria-labelledby="mobile-orders-title"><div class="mobile-orders-heading"><span class="sale-icon" data-icon="mobile"></span><div><h3 id="mobile-orders-title">Mobile orders</h3><p>1–12 mobiles per order, across this call.</p></div></div><p class="order-service-note">For a new mobile service, also select Mobile under Services added on its account.</p><div id="mobile-orders" class="mobile-orders" aria-live="polite" aria-relevant="additions removals text"></div><button class="button secondary add-order" type="button" data-action="add-order"><span data-icon="plus"></span>Add mobile order</button></section>
-                <section class="entry-callback" aria-label="Callback reminder">
-                  <button type="button" class="text-button" data-action="toggle-callback" aria-controls="callback-fields" aria-expanded="false"><span id="callback-toggle-icon" data-icon="plus"></span><span id="callback-toggle-label">Add callback reminder</span></button>
-                  <div id="callback-fields" class="callback-fields input-stack" hidden>
-                    <label for="callback-at">Callback date and time</label><input id="callback-at" type="datetime-local" step="60" aria-describedby="callback-zone"><small id="callback-zone"></small>
-                    <label for="callback-note">Callback note <span class="optional-label">(optional)</span></label><textarea id="callback-note" rows="2" maxlength="2000" placeholder="What do you need to follow up on?"></textarea>
-                  </div>
+                <section class="mobile-orders-section" aria-labelledby="mobile-orders-title">
+                  <div class="mobile-orders-heading"><span class="sale-icon" data-icon="mobile"></span><div><h3 id="mobile-orders-title">Mobile orders</h3><p>1–12 lines per order, across this call.</p></div></div>
+                  <p class="order-service-note">If the account gained mobile service, also select Mobile under Services added.</p>
+                  <div id="mobile-orders" class="mobile-orders"></div>
+                  <button class="button secondary add-order" type="button" data-action="add-order"><span data-icon="plus"></span>Add mobile order</button>
                 </section>
                 <div class="outcome-preview" id="outcome-preview" aria-live="polite"></div>
                 <p id="form-error" class="form-error" role="alert" hidden></p>
-                <button class="button primary submit-call" type="submit"><span data-icon="check"></span><span id="submit-label">Save call</span></button>
-                <button class="text-button cancel-edit" type="button" data-action="cancel-edit" hidden>Cancel editing</button>
-                <p class="form-note"><span data-icon="lock"></span>Saved to your account</p>
+                <button class="button primary submit-call" type="submit"><span data-icon="check"></span><span id="submit-label">Save tally</span></button>
               </form>
             </section>
-            <div class="next-win" id="next-win"></div>
           </aside>
         </div>
 
-        <section id="callback-reminder-panel" class="panel callback-panel" aria-labelledby="callback-reminder-title" hidden>
-          <div class="panel-heading compact"><div><h2 id="callback-reminder-title" tabindex="-1">Callback reminders <span id="callback-reminder-count" class="heading-count"></span></h2><p>Pending callbacks across all dates. Times are local to this device.</p></div></div>
-          <ul id="callback-reminder-list" class="callback-list"></ul>
-        </section>
-
-        <section class="panel recent-panel" aria-labelledby="recent-title"><div class="panel-heading compact"><div><h2 id="recent-title">Recent calls <span id="recent-count" class="heading-count"></span></h2><p>The latest conversations in your day.</p></div><button class="text-button" data-view="calls">View all calls <span data-icon="arrow-right"></span></button></div><div id="recent-calls"></div></section>
+        <section class="panel recent-panel" aria-labelledby="recent-title"><div class="panel-heading compact"><div><h2 id="recent-title">Grouped outcomes <span id="recent-count" class="heading-count"></span></h2><p>Account outcomes and mobile sales for this date.</p></div><button class="text-button" data-view="calls">View call log <span data-icon="arrow-right"></span></button></div><div id="recent-calls"></div></section>
         <footer class="page-footer">Made for the space between calls.<span>Your progress, across devices</span></footer>
       </section>
 
-      <section id="view-calls" class="view" hidden><div class="panel"><div class="call-toolbar"><button class="text-button all-history-btn" data-action="all-history" aria-pressed="false">All dates</button><div class="filter-tabs" id="call-filters" aria-label="Filter calls"><button data-filter="all" class="active">All calls</button><button data-filter="saved">Saves</button><button data-filter="disconnected">Disconnects</button><button data-filter="downgrade">Downgrades</button><button data-filter="wash">Wash</button><button data-filter="mobile">Mobile sold</button></div><button class="button secondary export-button" data-action="export"><span data-icon="download"></span>Export CSV</button></div><div id="all-calls"></div><div class="table-footer" id="table-footer"></div><div class="pagination" id="pagination"></div></div></section>
+      <section id="view-calls" class="view" hidden><div class="panel"><div class="call-toolbar"><button class="text-button all-history-btn" data-action="all-history" aria-pressed="false">All dates</button><div class="filter-tabs" id="call-filters" aria-label="Filter calls"><button data-filter="all" class="active">All outcomes</button><button data-filter="saved">Saves</button><button data-filter="disconnected">Disconnects</button><button data-filter="downgrade">Downgrades</button><button data-filter="wash">Wash</button><button data-filter="mobile">Mobile sold</button></div><button class="button secondary export-button" data-action="export"><span data-icon="download"></span>Export CSV</button></div><div id="all-calls"></div><div class="table-footer" id="table-footer"></div><div class="pagination" id="pagination"></div></div></section>
 
       <section id="view-goals" class="view" hidden><div class="goals-settings panel"><div class="panel-heading"><div><h2>Make the goals yours</h2><p>Set the targets used for every report date.</p></div><span class="autosave-badge" id="goal-save-status">Starting targets</span></div><div id="goal-settings"></div><div class="settings-footer"><p>Goals change the rings, never your call outcomes.</p></div></div></section>
     </main>
   </div>
 
   <nav class="mobile-nav" aria-label="Mobile navigation"><button data-view="today" class="active"><span data-icon="overview"></span>Overview</button><button data-view="calls"><span data-icon="calls"></span>Call log</button><button data-view="goals"><span data-icon="target"></span>Goals</button><button class="mobile-sign-out" data-action="sign-out" aria-label="Sign out of your account"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v16h4m5-12 4 4-4 4m-4-4h11"/></svg>Sign out</button></nav>
-  <input type="file" id="backup-input" accept="application/json,.json" hidden>
   <div class="toast" id="toast" role="status" hidden></div>
   <dialog id="detail-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
   </div>

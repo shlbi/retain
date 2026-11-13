@@ -1,16 +1,21 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { tallyForCall, groupsFromDays } from '../dist/tally.js';
 import { PGlite } from '@electric-sql/pglite';
 import { DEFAULT_GOALS } from '../dist/model.js';
 import { MAX_BACKUP_BYTES, validateCall } from '../dist/validation.js';
 
+const tallyMigration = '20261113033103_grouped_tallies.sql';
 let db, upgradeUser, legacyState;
 before(async()=>{
   db = new PGlite();
   await db.exec('create role anon; create role authenticated; create role service_role;');
   const directory = new URL('../supabase/migrations/',import.meta.url);
   for (const file of (await readdir(directory)).filter(file=>file.endsWith('.sql')).sort()) {
+    // The legacy RPC tests run immediately before the aggregate cutover tested below.
+    if (file === tallyMigration) break;
     // Supabase's GitHub runner applies each migration in a transaction.
     await db.exec('begin;\n' + await readFile(new URL(file,directory),'utf8') + '\ncommit;');
     if (file === '20261106005417_workspace.sql') {
@@ -236,4 +241,99 @@ test('SQL capacity failures roll back save, import, and restore including Undo r
   assert.equal((await state(user)).calls.length,count);
   assert.equal(await snapshotSize(),before);
   assert.equal((await db.query('select revision from workspace_private.call_versions where user_id=$1 and id=$2',[user.id,record.id])).rows[0].revision,2);
+});
+
+test('SQL migrates and serves grouped daily tallies and retires raw call access', async t => {
+  const user = await register('daily tallies'), other = await register('separate tally user');
+  const day = '2026-11-07';
+  const account = (before,kept,added=[]) => ({before,kept,added,account:'private account'});
+  const unusual = [
+    account(['tv','mobile'],['tv','mobile'],['internet']),
+    account(['tv','mobile'],[]),
+    account(['tv','mobile'],['tv','mobile'],['phone']),
+    account(['internet','phone'],['internet'])
+  ];
+  const seed = async (accounts, orders) => {
+    const record = call({id:randomUUID(),ucid:randomUUID(),account:'private account',day,accounts,
+      before:accounts[0].before,kept:accounts[0].kept,mobileOrders:orders,sold:!!orders.length,
+      soldLines:orders.reduce((sum,n)=>sum+n,0),callback:{approved:true,status:'scheduled',note:'private note',dueAt:'2028-11-07T12:00:00.000Z'}});
+    await save(user,record);
+    return tallyForCall(record);
+  };
+  const first = await seed(unusual,[2,12]);
+  const second = await seed([account(['mobile'],[])],[]);
+  const wash = await seed([account(['phone'],[]),account(['phone'],['phone'])],[]);
+  await rpc('workspace_goal',{p_user_id:user.id,p_key:'tp',p_value:88});
+  const migrations = new URL('../supabase/migrations/',import.meta.url);
+  for (const file of (await readdir(migrations)).filter(file=>file.endsWith('.sql') && file>=tallyMigration).sort()) {
+    await db.exec('begin;\n' + await readFile(new URL(file,migrations),'utf8') + '\ncommit;');
+  }
+  const read = u => rpc('workspace_tally_state',{p_user_id:u.id});
+  const write = (u,delta,key=randomUUID())=>rpc('workspace_tally',{p_user_id:u.id,p_day:day,p_delta:delta,p_request_id:key});
+  const expectedGroups = (...deltas)=>groupsFromDays(deltas);
+  const sort = current => ({...current,groups:expectedGroups(current)});
+  const initial = {day,calls:3,eligibleCalls:2,savedCalls:1,saleCalls:1,mobileOrders:2,mobileLines:14,
+    groups:expectedGroups(first,second,wash)};
+
+  await t.test('backfill agrees with model and exposes only counts, tags and goals',async()=>{
+    const migrated=await read(user);
+    assert.deepEqual(migrated.goals,{...DEFAULT_GOALS,tp:88});
+    assert.deepEqual(migrated.days.map(sort),[initial]);
+    assert.equal(migrated.version,4);
+    assert.deepEqual((await read(other)).days,[]);
+    assert.doesNotMatch(JSON.stringify(migrated),/private note|private account|UCID|callback/i);
+    const historical=await read(upgradeUser);
+    assert.equal(historical.days[0].calls,1);
+    assert.equal(historical.days[0].mobileLines,3);
+  });
+
+  await t.test('atomic same-day merge and retry return durable totals including independent concurrent saves',async()=>{
+    const key=randomUUID(), groupCall=tallyForCall({before:['tv'],kept:['tv'],mobileOrders:[12]});
+    const expected = {...initial,calls:4,eligibleCalls:3,savedCalls:2,saleCalls:2,mobileOrders:3,mobileLines:26,
+      groups:expectedGroups(initial,groupCall)};
+    assert.deepEqual(sort(await write(user,groupCall,key)),expected);
+    assert.deepEqual(sort(await write(user,groupCall,key)),expected);
+    await assert.rejects(write(user,first,key),/CONFLICT/);
+    const latest=await write(user,groupCall);
+    assert.equal(latest.calls,5);
+    assert.deepEqual(await write(user,groupCall,key),latest);
+    assert.deepEqual((await read(user)).days,[latest]);
+    assert.deepEqual((await read(other)).days,[]);
+    assert.equal((await write(other,groupCall,key)).calls,1);
+  });
+
+  await t.test('validation rejects aliases, unpaired washes and inconsistent counts without incrementing',async()=>{
+    const before=await read(other);
+    const good=tallyForCall({before:['tv'],kept:['tv']});
+    const key=randomUUID();
+    for(const delta of [{...good,ucid:'x'},{...good,groups:[{...good.groups[0],account:'x'}]},
+      {...good,groups:[{...good.groups[0],washed:true}],eligibleCalls:0,savedCalls:0},
+      {...good,groups:[...good.groups,...good.groups]}, {...good,eligibleCalls:0}, {...good,foo:2},
+      {...good,saleCalls:1}, {...good,mobileOrders:1,mobileLines:13,saleCalls:1},
+      {...good,groups:[{...good.groups[0],count:-1}]}, {...good,savedCalls:null}]) {
+      await assert.rejects(write(other,delta,key),/VALIDATION/);
+    }
+    assert.deepEqual(await read(other),before);
+    assert.equal((await write(other,good,key)).calls,2);
+  });
+
+  await t.test('authenticated API role cannot read or change archived calls or access raw aggregate tables',async()=>{
+    await assert.rejects(save(user,call()),/does not exist/);
+    await assert.rejects(state(user),/does not exist/);
+    await assert.rejects(db.query('delete from workspace_private.calls where user_id=$1',[user.id]),/CONFLICT/);
+    const {rows}=await db.query("select bool_and(relrowsecurity) as all_rls from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='workspace_private' and c.relkind='r'");
+    assert.equal(rows[0].all_rls,true);
+    for(const role of ['anon','authenticated','service_role']){
+      await db.exec('set role '+role);
+      try {
+        await assert.rejects(db.query('select * from workspace_private.tally_groups'),/permission denied/);
+        await assert.rejects(db.query('select * from workspace_private.calls'),/permission denied/);
+        if(role==='service_role') assert.equal((await read(user)).days.length,1);
+        else {
+          await assert.rejects(read(user),/permission denied/);
+          await assert.rejects(write(user,first),/permission denied/);
+        }
+      }finally{await db.exec('reset role');}
+    }
+  });
 });

@@ -1,5 +1,6 @@
-import { StorageError, validateCall, validateGoals, validateBackup, MAX_BACKUP_CALLS } from './validation.js';
-export { parseBackup, MAX_BACKUP_BYTES, MAX_BACKUP_CALLS, validDay } from './validation.js';
+import { StorageError } from './validation.js';
+import { validateDayTotals, validateTallyState, validateTallyUpdate } from './tally-validation.js';
+export { validDay } from './validation.js';
 
 /** Call only our same-origin server. Authentication lives in an HttpOnly cookie. */
 export async function apiRequest(action, data, userId) {
@@ -8,6 +9,8 @@ export async function apiRequest(action, data, userId) {
   const headers = { Accept:'application/json' };
   if (userId) headers['X-Workspace-User'] = userId;
   const method = data === undefined ? 'GET' : 'POST';
+  const uncertain = action === 'tally' ? 'The save could not be confirmed. Use Retry save to check it without counting twice.'
+    : 'Could not confirm the change. Check your connection and try again.';
   if (method === 'POST') headers['Content-Type'] = 'application/json';
   try {
     const response = await fetch('/api/workspace' + (method === 'GET' && action ? '?action='+encodeURIComponent(action) : ''), {
@@ -15,7 +18,7 @@ export async function apiRequest(action, data, userId) {
       ...(method === 'POST' ? {body:JSON.stringify({action,...data})} : {})
     });
     let result;
-    try { result = await response.json(); } catch { throw new StorageError('NETWORK','The server returned an unexpected response. Reload and try again.'); }
+    try { result = await response.json(); } catch { throw new StorageError('NETWORK',method === 'POST' ? uncertain : 'The server returned an unexpected response. Try again.'); }
     if (!response.ok) {
       const error = new StorageError(result.error?.code || 'NETWORK', result.error?.message || 'The request could not be completed.');
       if (response.status === 401 && userId && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('session-expired',{detail:{userId}}));
@@ -24,7 +27,7 @@ export async function apiRequest(action, data, userId) {
     return result;
   } catch (error) {
     if (error instanceof StorageError) throw error;
-    throw new StorageError('NETWORK', method==='POST' ? 'Could not confirm the change. Check your connection and refresh saved records before retrying. Your entry is still here.' : 'Could not load your records. Check your connection and try again.');
+    throw new StorageError('NETWORK', method==='POST' ? uncertain : 'Could not load your records. Check your connection and try again.');
   } finally { clearTimeout(timer); }
 }
 
@@ -39,14 +42,18 @@ export function createRepository(userId, request = apiRequest) {
   return {
     async read() {
       const result = await call('state');
-      if (!result || result.version !== 3) throw new StorageError('STORAGE','The saved records could not be read safely.');
-      return validateBackup(result);
+      return validateTallyState(result);
     },
-    async saveCall(record, expectedRevision = null) { return validateCall(await call('save',{call:validateCall(record),expectedRevision})); },
-    async removeCall(id, expectedRevision) { return validateCall(await call('remove',{id,expectedRevision})); },
-    async restoreCall(record) { return validateCall(await call('restore',{call:validateCall(record)})); },
+    async tally(day, delta, requestId) {
+      const update = validateTallyUpdate(day,delta,requestId);
+      const response = await call('tally',update);
+      try {
+        const result = validateDayTotals(response);
+        if (result.day === day) return result;
+      } catch { /* The write may have committed before the response was damaged. */ }
+      throw new StorageError('STORAGE','Could not confirm the saved day. Use Retry save.');
+    },
     setGoal(key,value) { return call('goal',{key,value}); },
-    importBackup(backup) { return call('import',{backup:validateBackup(backup)}); },
     close() { closed = true; }
   };
 }

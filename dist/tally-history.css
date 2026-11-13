@@ -1,0 +1,24 @@
+.tally-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #273e58;
+  font-size: 13px;
+  text-align: left;
+}
+.tally-table th, .tally-table td {
+  padding: 14px clamp(10px, 1.7vw, 24px);
+  border-bottom: 1px solid #e3eaf3;
+  vertical-align: middle;
+}
+.tally-table th { background: #f6f8fb; color: #53667c; font-size: 12px; font-weight: 550; }
+.tally-table tr:last-child td { border-bottom: none; }
+.tally-table .tally-count { font-variant-numeric: tabular-nums; text-align: right; }
+.tally-table .tally-count, .tally-table .tally-date { width: 1%; white-space: nowrap; }
+.tally-table .badge { font-size: 11px; padding: 4px 7px; }
+.tally-empty { margin: 0; padding: 34px 20px; color: #526781; text-align: center; }
+@media (max-width: 600px) {
+  .tally-table th, .tally-table td { padding: 11px 8px; }
+  .tally-table { font-size: 12px; }
+  .tally-table .tally-count, .tally-table .tally-date { width: 24%; white-space: normal; }
+  .tally-table .badge { font-size: 10px; }
+}
