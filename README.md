@@ -62,4 +62,4 @@ There are no runtime npm dependencies. To run locally with an already configured
 
 ## Earlier records
 
-The database upgrade converts historical records in Supabase to grouped daily counts. Original legacy records remain in private database storage for operator-managed retention. The current app exposes only grouped counts, and the former raw-call JSON export and restore flows have been retired. Previously downloaded files and database backups may still contain customer details.
+The database upgrade converts historical records in Supabase to grouped daily counts. The [cleanup SQL](scripts/retain-grouped-cleanup.sql) verifies those counts and permanently removes the individual call records, callback notes and call revisions from the live database. Previously downloaded files and database backups may still contain customer details.

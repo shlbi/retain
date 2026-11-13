@@ -22,7 +22,7 @@ select
 
 All three columns should be true. Complete the synthetic checks below before resuming use.
 
-Original legacy rows remain private after backfill. Evaluate their retention separately, including any admin backups and earlier CSV or JSON downloads. The new release serves grouped records through its authenticated API. Full-record export, restore and callback scheduling belong to the retired version.
+The grouped migration by itself leaves legacy calls in a private archive. To retire an existing archive, pause call entry, handle outstanding callbacks and run the complete [cleanup SQL](scripts/retain-grouped-cleanup.sql) in the Supabase SQL Editor. It checks daily totals and service groups before permanently removing the old call and revision tables. All four result columns should be true. Earlier database backups and downloaded exports have their own retention periods.
 
 This app uses Supabase Postgres with its own username/password authentication. Supabase Auth email settings do not affect signup.
 
