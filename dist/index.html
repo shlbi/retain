@@ -12,25 +12,39 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="callbacks.css">
   <link rel="stylesheet" href="entry.css">
+  <link rel="stylesheet" href="auth.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
   <main id="auth-view" class="auth-view" aria-labelledby="auth-title">
-    <section class="auth-card">
-      <div class="auth-symbol" aria-hidden="true"><svg viewBox="0 0 48 48"><circle class="auth-ring-track" cx="24" cy="24" r="17"/><circle class="auth-ring-progress" cx="24" cy="24" r="17"/><path d="m17 24 5 5 10-11"/></svg></div>
-      <h1 id="auth-title">Welcome back</h1>
-      <p id="auth-description" class="auth-description">Your calls and goals, across devices.</p>
-      <form id="auth-form" class="auth-form">
-        <div class="auth-field"><label for="username">Username</label><input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="64" placeholder="Your username"></div>
-        <div class="auth-field"><label for="password">Password</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024" placeholder="Your password"><button class="password-toggle" type="button" data-action="toggle-password" aria-label="Show password" aria-controls="password" aria-pressed="false">Show</button></div></div>
-        <p id="auth-error" class="auth-error" role="alert" hidden></p>
-        <button id="auth-submit" class="button primary auth-submit" type="submit">Sign in</button>
-      </form>
-      <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">Create an account</button>
-      <p id="auth-status" class="auth-status" role="status">Checking session…</p>
-      <noscript><p class="auth-error">Enable JavaScript to sign in and use your workspace.</p></noscript>
-    </section>
-    <p class="auth-footnote">A little progress, every conversation.</p>
+    <div class="auth-blueprint">
+      <div class="auth-art" aria-hidden="true">
+        <div class="handset-frame"><img src="blueprint-handset.svg" alt=""></div>
+      </div>
+      <section class="auth-card" aria-labelledby="auth-title">
+        <h1 id="auth-title">Welcome back</h1>
+        <form id="auth-form" class="auth-form">
+          <div class="auth-field">
+            <label for="username">Username</label>
+            <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="64">
+          </div>
+          <div class="auth-field">
+            <label for="password">Password</label>
+            <div class="password-field">
+              <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024">
+              <button class="password-toggle" type="button" data-action="toggle-password" aria-label="Show password" aria-controls="password" aria-pressed="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="M3 3l18 18"/></svg>
+              </button>
+            </div>
+          </div>
+          <p id="auth-error" class="auth-error" role="alert" hidden></p>
+          <button id="auth-submit" class="auth-submit" type="submit">Sign in</button>
+        </form>
+        <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">Create an account</button>
+        <p id="auth-status" class="auth-status" role="status">Checking session…</p>
+        <noscript><p class="auth-error">Enable JavaScript to sign in and use your workspace.</p></noscript>
+      </section>
+    </div>
   </main>
 
   <div id="workspace-view" hidden>

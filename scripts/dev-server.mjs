@@ -13,7 +13,7 @@ if(qaModule && (process.env.VERCEL || process.env.NODE_ENV==='production'))throw
 const database=qaModule?(await import(pathToFileURL(path.resolve(qaModule)).href)).default:undefined;
 const handler=createHandler({env:{...process.env,NODE_ENV:'development'},database});
 const root=path.resolve('dist');
-const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
+const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.woff2':'font/woff2'};
 http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/api/workspace')return handler(req,res);

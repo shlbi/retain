@@ -412,7 +412,7 @@ async function onClick(event){const button=event.target.closest('button,[data-ca
   case 'remove-order':draft.mobileOrders.splice(Number(button.dataset.orderIndex),1);renderEntry();document.querySelector('[data-action="add-order"]')?.focus();break;
   case 'sign-out':await signOut();break;
   case 'confirm-sign-out':await finishSignOut();break;
-  case 'toggle-password':$('password').type=$('password').type==='password'?'text':'password';button.setAttribute('aria-pressed',String($('password').type==='text'));button.setAttribute('aria-label',$('password').type==='text'?'Hide password':'Show password');button.textContent=$('password').type==='password'?'Show':'Hide';break;
+  case 'toggle-password':setPasswordVisible($('password').type==='password');break;
   case 'help':showHelp();break;
   case 'close-dialog':pendingImport=null;$('detail-dialog').close();break;
   case 'metric-goals':$('detail-dialog').close();setView('goals');break;
@@ -452,10 +452,24 @@ async function syncFromStorage(){
 }
 function authMessage(message){$('auth-error').textContent=message;$('auth-error').hidden=!message;}
 function setAuthBusy(value){authBusy=value;$('auth-form').querySelectorAll('input,button').forEach(el=>el.disabled=value);$('auth-mode-toggle').disabled=value;$('auth-submit').textContent=value?'Please wait…':authMode==='signup'?'Create account':'Sign in';}
-function renderAuth(){const signup=authMode==='signup';$('auth-title').textContent=signup?'Create your account':'Welcome back';$('auth-description').textContent=signup?'Choose a username and password. That’s it.':'Your calls and goals, across devices.';$('auth-submit').textContent=signup?'Create account':'Sign in';$('auth-mode-toggle').textContent=signup?'Already have an account? Sign in':'Create an account';$('password').autocomplete=signup?'new-password':'current-password';authMessage('');}
+function setPasswordVisible(visible) {
+  $('password').type = visible ? 'text' : 'password';
+  const toggle = document.querySelector('[data-action="toggle-password"]');
+  toggle.setAttribute('aria-pressed', String(visible));
+  toggle.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+}
+function renderAuth() {
+  const signup = authMode === 'signup';
+  $('auth-title').textContent = signup ? 'Create account' : 'Welcome back';
+  $('auth-submit').textContent = signup ? 'Create account' : 'Sign in';
+  $('auth-mode-toggle').textContent = signup ? 'Back to sign in' : 'Create an account';
+  $('password').autocomplete = signup ? 'new-password' : 'current-password';
+  setPasswordVisible(false);
+  authMessage('');
+}
 /** Clear one account's data before displaying another account or the sign-in form. */
 function showSignIn(message=''){
- sessionEpoch++;sessionRequest++;sessionUser=null;authMode='login';ready=false;repo?.close();repo=null;busy=false;pendingImport=null;state={version:3,calls:[],goals:{...DEFAULT_GOALS}};editing=null;closeEntry();$('detail-dialog').close();clearEntry();renderDashboard();renderGoals();$('workspace-view').hidden=true;$('auth-view').hidden=false;$('toast').hidden=true;clearTimeout(toastTimer);$('password').value='';$('password').type='password';const visibility=document.querySelector('[data-action="toggle-password"]');visibility.textContent='Show';visibility.setAttribute('aria-pressed','false');visibility.setAttribute('aria-label','Show password');$('auth-status').textContent='';renderAuth();setAuthBusy(false);authMessage(message);
+ sessionEpoch++;sessionRequest++;sessionUser=null;authMode='login';ready=false;repo?.close();repo=null;busy=false;pendingImport=null;state={version:3,calls:[],goals:{...DEFAULT_GOALS}};editing=null;closeEntry();$('detail-dialog').close();clearEntry();renderDashboard();renderGoals();$('workspace-view').hidden=true;$('auth-view').hidden=false;$('toast').hidden=true;clearTimeout(toastTimer);$('password').value='';$('auth-status').textContent='';renderAuth();setAuthBusy(false);authMessage(message);
 }
 async function enterWorkspace(user){
  const epoch=++sessionEpoch;

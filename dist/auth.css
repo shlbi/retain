@@ -1,0 +1,143 @@
+@font-face {
+  font-family: "Blueprint Display";
+  src: url("fonts/blueprint-display.woff2") format("woff2");
+  font-weight: 800;
+  font-display: swap;
+}
+
+.auth-view {
+  --ink: #142aa3;
+  --paper: #fff9eb;
+  --grid-line: rgba(33, 71, 160, .115);
+  --display: "Blueprint Display", "Arial Narrow", sans-serif;
+  min-height: 100vh;
+  min-height: 100svh;
+  max-width: none;
+  margin: 0;
+  padding: clamp(24px, 5.5vw, 90px);
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image: linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+                    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  font-family: system-ui, sans-serif;
+}
+
+.auth-blueprint {
+  width: min(100%, 1110px);
+  border: 2px solid var(--ink);
+  display: grid;
+  grid-template-columns: 1.04fr 1fr;
+}
+
+.auth-art {
+  position: relative;
+  container-type: size;
+  overflow: hidden;
+  border-right: 2px solid var(--ink);
+}
+
+.handset-frame {
+  /* Center the original handset drawing; the extended cable can reach the panel edge. */
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: min(100%, 91.8033cqh);
+  margin-inline: auto;
+}
+
+.auth-art img {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  width: calc(100% * 1200 / 560);
+  max-width: none;
+  object-fit: contain;
+}
+
+.auth-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: var(--paper);
+  padding: clamp(32px, 4vw, 66px);
+}
+
+.auth-card h1, .auth-submit, .auth-mode-toggle {
+  color: inherit;
+  font-family: var(--display);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .015em;
+}
+
+.auth-card h1 {
+  max-width: none;
+  margin: 0 0 clamp(24px, 2.7vw, 42px);
+  font-size: clamp(39px, 4.65vw, 72px);
+  line-height: 1;
+}
+
+.auth-form, .auth-field { display: grid; }
+.auth-form { gap: clamp(20px, 2.1vw, 32px); }
+.auth-field { min-width: 0; gap: 8px; }
+.auth-field label { font-size: clamp(15px, 1.35vw, 19px); font-weight: 700; }
+.auth-field input {
+  width: 100%;
+  min-width: 0;
+  height: 49px;
+  padding: 9px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+  background: transparent;
+  color: #142346;
+  font: 400 17px/1.4 system-ui, sans-serif;
+}
+
+.password-field { position: relative; }
+.password-field input { padding-right: 52px; }
+.password-toggle {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  inset: 2px 2px 2px auto;
+  width: 46px;
+  color: var(--ink);
+}
+.password-toggle svg { width: 23px; height: 23px; }
+.password-toggle[aria-pressed="false"] .eye-slash { display: none; }
+
+.auth-submit, .auth-mode-toggle {
+  width: 100%;
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+  padding: 10px;
+  font-size: 24px;
+  line-height: 1.1;
+}
+.auth-submit { min-height: 56px; background: var(--ink); color: var(--paper); }
+.auth-mode-toggle { min-height: 48px; margin-top: 14px; background: transparent; font-size: 21px; }
+.auth-submit:hover:enabled { background: #0a1b81; }
+.auth-mode-toggle:hover:enabled, .password-toggle:hover:enabled { background: #e8e9e9; }
+.auth-card :is(button, input):focus-visible { outline: 3px solid #3566c9; outline-offset: 3px; }
+.auth-card :disabled { cursor: wait; opacity: .65; }
+.auth-error { padding: 10px 12px; border-left: 3px solid #942c22; background: #fcece4; color: #81251f; }
+.auth-error, .auth-status { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.auth-status:not(:empty), .auth-card noscript .auth-error { margin-top: 12px; }
+
+@media (max-width: 720px) {
+  .auth-view { padding: 24px 20px; background-size: 19px 19px; }
+  .auth-blueprint { max-width: 440px; grid-template-columns: minmax(0, 1fr); }
+  .auth-art { height: clamp(150px, 26svh, 245px); border-right: 0; border-bottom: 2px solid var(--ink); }
+  .handset-frame { margin-inline: 7% auto; }
+  .auth-card { padding: clamp(20px, 5.4vw, 32px); }
+  .auth-card h1 { font-size: clamp(36px, 9.5vw, 48px); margin-bottom: 22px; }
+  .auth-form { gap: 17px; }
+  .auth-field { gap: 5px; }
+  .auth-field input { height: 45px; }
+  .auth-submit { min-height: 48px; }
+  .auth-mode-toggle { margin-top: 10px; }
+}

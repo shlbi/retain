@@ -168,34 +168,6 @@ body{line-height:1.45}
   .sidebar .help-button svg{width:19px;height:19px}
 }
 
-/* Account entry stays focused on the two fields needed to continue. */
-.auth-view{min-height:100vh;min-height:100svh;max-width:none;margin:0;padding:48px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 8%,#e1edfc 0,transparent 57%),#f5f7fb}
-.auth-card{width:100%;max-width:420px;padding:38px 36px 29px;border:1px solid #dce5f0;border-radius:22px;background:#fff;box-shadow:0 12px 45px #193e6b0b;text-align:center}
-.auth-symbol{width:60px;height:60px;display:grid;place-items:center;margin:0 auto 22px;border-radius:18px;background:#edf4fd;color:#2563a6}
-.auth-symbol svg{width:48px;height:48px;stroke-width:2.5}
-.auth-ring-track{stroke:#d6e4f6;stroke-width:3}
-.auth-ring-progress{stroke:#3478bc;stroke-width:3;stroke-dasharray:91 107;transform:rotate(-90deg);transform-origin:center}
-.auth-card h1{font-size:29px;letter-spacing:-.9px;line-height:1.25;max-width:none;margin:0;color:#223d60}
-.auth-description{font-size:14px;line-height:1.6;color:#5c6f87;margin:11px 0 28px}
-.auth-form{text-align:left;display:grid;gap:19px}
-.auth-field{display:grid;gap:8px;min-width:0}
-.auth-field label{font-size:12px;font-weight:600;color:#405773}
-.auth-field input{display:block;width:100%;min-width:0;height:49px;border:1px solid #cbd8e8;border-radius:9px;background:#fbfdff;color:#243b59;padding:12px 14px;font-size:16px;transition:border-color .15s,box-shadow .15s}
-.auth-field input::placeholder{color:#697d95;font-size:14px}
-.auth-field input:focus{outline:0;border-color:#3478bc;box-shadow:0 0 0 3px #2563a61a;background:#fff}
-.auth-field input[aria-invalid="true"]{border-color:#b35c46}
-.password-field{position:relative}
-.password-field input{padding-right:70px}
-.password-toggle{position:absolute;right:3px;top:3px;bottom:3px;min-width:58px;min-height:43px;padding:0 10px;border-radius:7px;color:#365f91;font-size:12px;font-weight:600}
-.password-toggle:hover{background:#edf4fd}
-.auth-submit{width:100%;min-height:48px;margin-top:3px;font-size:14px;border-radius:9px}
-.auth-error{background:#fff3ed;border:1px solid #efd3c5;color:#963f2b;border-radius:8px;padding:11px 13px;font-size:12px;line-height:1.6;margin:0;overflow-wrap:anywhere;text-align:left}
-.auth-mode-toggle{min-height:44px;margin-top:15px;padding:10px 18px;border-radius:7px;color:#255f9e;font-size:13px;font-weight:550}
-.auth-mode-toggle:hover{background:#edf4fd}
-.auth-status{min-height:18px;margin:12px 0 0;color:#60738b;font-size:11px;line-height:1.6}
-.auth-status:empty{margin-top:0;min-height:0}
-.auth-card noscript .auth-error{margin-top:18px}
-.auth-footnote{margin:24px 0 0;color:#61738b;font-size:12px;text-align:center}
 .session-user{display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#405d7d;padding-left:12px;border-left:1px solid #dce5f0}
 .session-user:empty{display:none}
 .desktop-sign-out{min-height:44px;padding:8px 10px;border-radius:7px;font-size:12px}
@@ -245,11 +217,6 @@ body{line-height:1.45}
   .mobile-order-row .mobile-lines-stepper output,.mobile-order-row .mobile-lines-stepper strong,.mobile-order-row .order-stepper output,.mobile-order-row .order-stepper strong{min-width:24px}
 }
 @media(max-width:760px){
-  .auth-view{padding:32px 20px;justify-content:center}
-  .auth-card{padding:32px 25px 24px;max-width:420px;border-radius:19px}
-  .auth-card h1{font-size:27px}
-  .auth-description{font-size:13px;margin-bottom:26px}
-  .auth-footnote{font-size:11px}
   .desktop-sign-out{display:none}
   .topbar-right{width:100%;gap:10px}
   .session-user{max-width:150px;margin-left:auto;font-size:11px}
@@ -267,8 +234,6 @@ body{line-height:1.45}
   .ring-card:first-child .ring-count{font-size:10px;text-align:center;max-width:none;line-height:1.45}
 }
 @media(max-width:370px){
-  .auth-view{padding:24px 15px}
-  .auth-card{padding:28px 22px 22px}
   .session-user{max-width:115px}
   .ring-card:first-child .ring-visual{width:119px;height:119px}
   .ring-card:first-child .ring-title{font-size:11px}
