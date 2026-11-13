@@ -1,36 +1,87 @@
 /** Service keys are shared by call entry, outcome calculation, and reporting. */
 export const SERVICES = [
   { key: 'internet', label: 'Internet', short: 'Internet', icon: 'internet', color: '#337faa' },
-  { key: 'tv', label: 'TV', short: 'TV', icon: 'tv', color: '#537db2' },
-  { key: 'phone', label: 'Home phone', short: 'Phone', icon: 'phone', color: '#637f9b' },
+  { key: 'tv', label: 'Video (TV)', short: 'Video', icon: 'tv', color: '#537db2' },
+  { key: 'phone', label: 'Voice (home phone)', short: 'Voice', icon: 'phone', color: '#637f9b' },
   { key: 'mobile', label: 'Mobile', short: 'Mobile', icon: 'mobile', color: '#7579ad' }
 ];
 
 export const METRICS = [
-  { key: 'overall', label: 'Overall save', color: '#2563a6', icon: 'target', goal: 85, unit: 'save', description: 'Calls with at least one original service kept ÷ all logged calls.' },
-  { key: 'internet', label: 'Internet save', color: '#337faa', icon: 'internet', goal: 85, unit: 'save', description: 'Internet kept ÷ calls that started with internet.' },
-  { key: 'tv', label: 'TV save', color: '#537db2', icon: 'tv', goal: 75, unit: 'save', description: 'TV kept ÷ calls that started with TV.' },
-  { key: 'sp', label: 'Single-play save', color: '#4c80b4', icon: 'layers', goal: 80, unit: 'save', description: 'SPS ÷ (SPS + SPD). Downgrades to one service count as SPS.' },
-  { key: 'dp', label: 'Double-play save', color: '#3c739f', icon: 'layers', goal: 80, unit: 'save', description: 'DPS ÷ (DPS + DPD). Downgrades to two services count as DPS.' },
-  { key: 'tp', label: 'Triple-play (3+)', color: '#426787', icon: 'layers', goal: 80, unit: 'save', description: 'TPS ÷ (TPS + TPD). TP groups three and four services; saves use services kept and full disconnects use starting services.' },
-  { key: 'phone', label: 'Home phone save', color: '#637f9b', icon: 'phone', goal: 80, unit: 'save', description: 'Home phone kept ÷ calls that started with home phone.' },
-  { key: 'mobile', label: 'Mobile save', color: '#7579ad', icon: 'mobile', goal: 75, unit: 'save', description: 'Existing mobile service kept ÷ calls that started with mobile. New line sales are counted separately.' },
+  { key: 'overall', label: 'Overall save', color: '#2563a6', icon: 'target', goal: 85, unit: 'save', description: 'Eligible calls keeping at least one original service ÷ calls with at least one unpaired account. Matched wash accounts are excluded.' },
+  { key: 'internet', label: 'Internet save', color: '#337faa', icon: 'internet', goal: 85, unit: 'save', description: 'Internet kept or added ÷ accounts that started with or added internet. Paired wash accounts are excluded for their original services.' },
+  { key: 'tv', label: 'Video save', color: '#537db2', icon: 'tv', goal: 75, unit: 'save', description: 'Video kept or added ÷ accounts that started with or added video. Downgrades count for each original service.' },
+  { key: 'phone', label: 'Voice save', color: '#637f9b', icon: 'phone', goal: 80, unit: 'save', description: 'Voice kept or added ÷ accounts that started with or added home phone service.' },
+  { key: 'mobile', label: 'Mobile save', color: '#7579ad', icon: 'mobile', goal: 75, unit: 'save', description: 'Mobile service kept or added ÷ accounts that started with or added mobile. An order can include several lines while the service counts once per account.' },
+  { key: 'sp', label: 'Single-play save', color: '#4c80b4', icon: 'layers', goal: 80, unit: 'save', description: 'SPS ÷ (SPS + SPD) for unpaired accounts that started with exactly one service.' },
+  { key: 'dp', label: 'Double-play save', color: '#3c739f', icon: 'layers', goal: 80, unit: 'save', description: 'DPS ÷ (DPS + DPD) for unpaired accounts that started with two services. Only full saves and full disconnects qualify.' },
+  { key: 'tp', label: 'Triple-play (3+)', color: '#426787', icon: 'layers', goal: 80, unit: 'save', description: 'TPS ÷ (TPS + TPD) for unpaired accounts that started with three or four services. Only full saves and full disconnects qualify.' },
+  { key: 'bundle', label: 'Bundle save', color: '#39618e', icon: 'layers', goal: 80, unit: 'save', description: 'Bundles keeping every original service ÷ bundles keeping all or disconnecting all original services. A bundle starts with at least two services. Wash pairs and downgrades are excluded.' },
   { key: 'orders', label: 'Mobile orders', color: '#6275b2', icon: 'sparkles', goal: 20, unit: 'order', description: 'Mobile orders placed ÷ all logged calls. Each order counts once regardless of its line count; multiple orders on one call count separately.' },
   { key: 'sales', label: 'Mobile lines', color: '#467ba8', icon: 'mobile', goal: 20, unit: 'line', description: 'New mobile lines sold ÷ all logged calls. Each order contains 1–12 lines; lines across multiple orders are added together, so the rate can exceed 100%.' }
 ];
 
 export const DEFAULT_GOALS = Object.fromEntries(METRICS.map(metric => [metric.key, metric.goal]));
 
-/** Classify saves by remaining services and full disconnects by starting services. */
+const SERVICE_KEYS = SERVICES.map(service => service.key);
+const PLAY_NAMES = ['', 'SP', 'DP', 'TP'];
+
+/** Read new and historical records through the same per-account scoring rules. */
+export function accountsFor(call) {
+  if (call?.accounts !== undefined) return Array.isArray(call.accounts) ? call.accounts : [];
+  if (!Array.isArray(call?.before) || !Array.isArray(call?.kept)) return [];
+  return [{ account: call.account ?? '', before: call.before, kept: call.kept, added: call.added ?? [] }];
+}
+
+/** Determine the outcome for the original services. Additions earn separate service credit. */
+export function classifyAccount(account) {
+  if (!Array.isArray(account?.before) || !Array.isArray(account?.kept)) return null;
+  const before = SERVICE_KEYS.filter(key => account.before.includes(key));
+  if (!before.length) return null;
+  const kept = before.filter(key => account.kept.includes(key));
+  const disconnected = before.filter(key => !kept.includes(key));
+  const additions = Array.isArray(account.added) ? account.added : [];
+  const added = SERVICE_KEYS.filter(key => !before.includes(key) && additions.includes(key));
+  const tier = Math.min(before.length, 3);
+  const saved = kept.length > 0;
+  let kind = saved ? 'save' : 'disconnect';
+  let code = PLAY_NAMES[tier] + (saved ? 'S' : 'D');
+  if (saved && disconnected.length > 0) {
+    kind = 'downgrade';
+    code = kept.length === 3 ? 'TP (4 → 3)' : PLAY_NAMES[tier] + ' → ' + PLAY_NAMES[kept.length];
+  }
+  return { code, kind, saved, tier, before, kept, added, disconnected };
+}
+
+/** Retain the two-list API for callers displaying one account. */
 export function classifyCall(before, kept) {
-  if (!Array.isArray(before) || !Array.isArray(kept)) return null;
-  const validBefore = [...new Set(before)].filter(key => SERVICES.some(service => service.key === key));
-  const validKept = [...new Set(kept)].filter(key => validBefore.includes(key));
-  if (!validBefore.length) return null;
-  const saved = validKept.length > 0;
-  const tier = Math.min(saved ? validKept.length : validBefore.length, 3);
-  const prefix = ['', 'SP', 'DP', 'TP'][tier];
-  return { code: prefix + (saved ? 'S' : 'D'), saved, tier, disconnected: validBefore.filter(service => !validKept.includes(service)) };
+  const result = classifyAccount({ before, kept });
+  if (!result) return null;
+  const { code, saved, tier, disconnected } = result;
+  return { code, saved, tier, disconnected };
+}
+
+/** Match one complete save with one complete loss of identical original services on this call. */
+export function outcomesForCall(call) {
+  const outcomes = [];
+  const matchingAccounts = new Map();
+  accountsFor(call).forEach((account, index) => {
+    const result = classifyAccount(account);
+    if (!result) return;
+    const outcome = { ...result, index, account: account.account ?? '', washed: false };
+    outcomes.push(outcome);
+    if (outcome.kind === 'downgrade') return;
+    // classifyAccount emits service keys in a stable order, including on legacy calls.
+    const signature = outcome.before.join(',');
+    if (!matchingAccounts.has(signature)) matchingAccounts.set(signature, { save: [], disconnect: [] });
+    matchingAccounts.get(signature)[outcome.kind].push(outcome);
+  });
+  for (const { save, disconnect } of matchingAccounts.values()) {
+    for (let index = 0; index < Math.min(save.length, disconnect.length); index++) {
+      save[index].washed = true;
+      disconnect[index].washed = true;
+    }
+  }
+  return outcomes;
 }
 
 /** Read independent mobile orders, using legacy counts only when canonical orders are absent. */
@@ -67,29 +118,40 @@ export function successesNeeded(successes, opportunities, targetPercent) {
   return Math.max(0, Math.ceil((target * opportunities - successes) / (1 - target) - 1e-9));
 }
 
-/** Compute each denominator independently so a bundle save can still lose a service. */
+/** Count service and bundle results per account, and overall saves and sales per call. */
 export function calculateMetrics(calls, goals = DEFAULT_GOALS) {
-  const validCalls = calls.map(call => ({ ...call, outcome: classifyCall(call?.before, call?.kept) })).filter(call => call.outcome);
-  return METRICS.map(metric => {
-    let eligible = validCalls;
-    let successes = 0;
-    if (metric.key === 'overall') successes = validCalls.filter(call => call.outcome.saved).length;
-    else if (metric.key === 'orders') successes = validCalls.reduce((sum, call) => sum + soldOrdersFor(call), 0);
-    else if (metric.key === 'sales') successes = validCalls.reduce((sum, call) => sum + soldLinesFor(call), 0);
-    else if (['sp', 'dp', 'tp'].includes(metric.key)) {
-      const prefix = metric.key.toUpperCase();
-      eligible = validCalls.filter(call => call.outcome.code.startsWith(prefix));
-      successes = eligible.filter(call => call.outcome.saved).length;
-    } else {
-      eligible = validCalls.filter(call => call.before.includes(metric.key));
-      successes = eligible.filter(call => call.kept.includes(metric.key)).length;
+  const counts = Object.fromEntries(METRICS.map(metric => [metric.key, { successes: 0, total: 0 }]));
+  function count(key, successes) {
+    counts[key].total++;
+    counts[key].successes += Number(successes);
+  }
+  for (const call of calls) {
+    const outcomes = outcomesForCall(call);
+    if (!outcomes.length) continue;
+    count('orders', soldOrdersFor(call));
+    count('sales', soldLinesFor(call));
+    const unpaired = outcomes.filter(outcome => !outcome.washed);
+    if (unpaired.length) count('overall', unpaired.some(outcome => outcome.saved));
+
+    for (const outcome of outcomes) {
+      for (const service of outcome.added) count(service, true);
     }
-    const total = eligible.length;
+    for (const outcome of unpaired) {
+      for (const service of outcome.kept) count(service, true);
+      for (const service of outcome.disconnected) count(service, false);
+      if (outcome.kind === 'downgrade') continue;
+      count(PLAY_NAMES[outcome.tier].toLowerCase(), outcome.saved);
+      if (outcome.tier >= 2) count('bundle', outcome.saved);
+    }
+  }
+  return METRICS.map(metric => {
+    const { successes, total } = counts[metric.key];
     const rate = total ? successes / total * 100 : null;
     const candidate = goals?.[metric.key];
     const goal = Number.isFinite(candidate) && candidate >= 0 && candidate <= 100 ? candidate : metric.goal;
     const progress = rate === null ? 0 : goal === 0 ? 1 : Math.min(rate / goal, 1);
-    return { ...metric, successes, total, rate, goal, progress, needed: successesNeeded(successes, total, goal), reached: total > 0 && rate >= goal - 1e-8 };
+    const opportunityUnit = ['overall', 'sales', 'orders'].includes(metric.key) ? 'call' : 'account';
+    return { ...metric, successes, total, opportunityUnit, rate, goal, progress, needed: successesNeeded(successes, total, goal), reached: total > 0 && rate >= goal - 1e-8 };
   });
 }
 

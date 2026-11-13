@@ -1,0 +1,19 @@
+.callback-panel { margin-top: 22px; scroll-margin-top: 74px; }
+.callback-panel h2:focus { outline: none; }
+.callback-list { list-style: none; margin: 0; padding: 0; max-height: 28rem; overflow-y: auto; }
+.callback-list li { border-top: 1px solid var(--line); padding: 15px 24px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.callback-info { min-width: 0; overflow-wrap: anywhere; }
+.callback-when { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; }
+.callback-due-badge { font-size: 10px; font-weight: 650; border-radius: 4px; background: #fff0d9; color: #814700; padding: 3px 6px; }
+.callback-record.text-button { white-space: normal; text-align: left; color: var(--blue); padding: 6px 0; overflow-wrap: anywhere; max-width: 100%; font-size: 12px; }
+.callback-record:hover { text-decoration: underline; }
+.callback-note { margin: 3px 0 0; white-space: pre-wrap; font-size: 13px; line-height: 1.5; color: var(--ink); }
+.callback-complete { flex-shrink: 0; min-height: 40px; }
+.callback-alert { position: sticky; top: 8px; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 15px; margin-bottom: 16px; border: 1px solid #bcd5f0; border-radius: 10px; color: #1f4f84; background: #edf5ff; box-shadow: 0 2px 6px #254a7612; font-size: 13px; }
+.callback-alert .text-button { color: #1f4f84; font-size: 12px; padding: 6px 2px; }
+@media (max-width: 760px) {
+  .callback-list li { padding: 13px 16px; }
+  .callback-complete, .callback-record.text-button { min-height: 44px; }
+  .callback-alert { padding: 4px 12px; }
+  .callback-alert .text-button { min-height: 44px; }
+}

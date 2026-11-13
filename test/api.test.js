@@ -129,10 +129,10 @@ test('database-backed rate limit stops hashing/account lookups and returns retry
   assert.doesNotMatch(db.calls[0].args.p_key,/127\.0\.0\.1|Agent/);
 });
 
-test('state returns exactly ten validated goals and logout revokes the token digest',async()=>{
+test('state returns eleven validated goals and logout revokes the token digest',async()=>{
   const db=fakeDatabase(),handler=createHandler({env:ENV,database:db}),cookie=session();
   const state=await request(handler,{method:'GET',url:'/api/workspace?action=state',cookie});
-  assert.equal(state.status,200);assert.equal(state.body.version,3);assert.equal(Object.keys(state.body.goals).length,10);
+  assert.equal(state.status,200);assert.equal(state.body.version,3);assert.equal(Object.keys(state.body.goals).length,11);
   const response=await request(handler,{body:{action:'logout'},cookie,expected:'stale'});
   assert.deepEqual(response.body,{ok:true});assert.match(response.headers['set-cookie'],/Max-Age=0/);
   assert.match(db.calls.find(call=>call.name==='auth_logout').args.p_token_hash,/^[a-f0-9]{64}$/);
@@ -146,6 +146,33 @@ test('record validation keeps optional blanks and independent mobile orders cano
     assert.equal((await request(handler,{body:{action:'save',call,expectedRevision:null},cookie})).status,400);
   }
   assert.equal(db.calls.filter(call=>call.name==='workspace_save').length,1);
+});
+
+test('account and approved callback details reach save, restore and import intact',async()=>{
+  const db=fakeDatabase(),handler=createHandler({env:ENV,database:db}),cookie=session();
+  const accounts=[
+    {account:'',before:['internet'],kept:['internet'],added:['mobile']},
+    {account:'000012',before:['internet'],kept:[],added:[]}
+  ];
+  const callback={dueAt:'2026-11-15T15:00:00.000Z',note:'Discuss the second account.',approved:true,status:'scheduled'};
+  const call=sample({accounts,callback});
+  const actions=[
+    {action:'save',call,expectedRevision:1},
+    {action:'restore',call},
+    {action:'import',backup:{version:3,calls:[call],goals:{...DEFAULT_GOALS}}}
+  ];
+  for (const body of actions) {
+    const response=await request(handler,{body,cookie});
+    assert.equal(response.status,200);
+    const args=db.calls.at(-1).args;
+    const sent=body.action==='import'?args.p_backup.calls[0]:args.p_call;
+    assert.deepEqual(sent.accounts,accounts);
+    assert.deepEqual(sent.callback,callback);
+  }
+  const invalid=sample({accounts,callback:{...callback,approved:false}});
+  const response=await request(handler,{body:{action:'save',call:invalid,expectedRevision:1},cookie});
+  assert.equal(response.status,400);
+  assert.equal(db.calls.filter(entry=>entry.name==='workspace_save').length,1);
 });
 
 test('restore and import preserve revision/conflict semantics and never return database details',async()=>{

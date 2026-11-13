@@ -2,19 +2,33 @@
 
 A blue, unbranded call outcome tracker for desktop and phone. Sign in with a username and password, tap the service outcomes, and log the call. UCID and account number are optional.
 
-## Mobile orders and mobiles sold
+## Logging and scoring a call
 
-Each mobile order contains **1–12 mobiles**. A call can include multiple separate orders. The dashboard tracks both quantities and percentages:
+Enter the original services for each customer account, mark the services kept, and select any services added during the call. Use **Add another account** for a second or subsequent account handled on the same call. Each account has its own optional account number. The call has one optional UCID and one set of mobile orders.
 
-| Metric | Calculation | Example over 10 calls |
+| Account outcome | History tag | Rates affected |
 | --- | --- | --- |
-| Mobile orders | Number of orders ÷ calls × 100 | One order with 3 mobiles = 1 order, 10% |
-| Mobile lines | Number of mobiles sold ÷ calls × 100 | The same order = 3 mobiles, 30% |
-| Mobile save | Calls keeping existing mobile service ÷ calls starting with mobile × 100 | New sales are separate from retained service |
+| Single service kept or disconnected | SPS or SPD | That service and single-play |
+| All original services kept or all disconnected on a double account | DPS or DPD | Each original service, double-play, and bundle |
+| All original services kept or all disconnected on a triple account | TPS or TPD | Each original service, triple-play, and bundle |
+| Some original services kept on a bundle | DP → SP, TP → DP, or TP → SP | Each original service counts as kept or lost. All play and bundle rates exclude the downgrade. |
+| New service added | Service added | One success and one opportunity for that service |
 
-The other rings show overall, internet, TV, home phone, single-play, double-play, and triple-play (3+) save rates. Saves use retained service count; full disconnects use starting service count. A 3-to-2 downgrade is DPS plus its disconnected service. Play rates use each outcome pair, such as DPS ÷ (DPS + DPD). TP groups three or four services. Daily reports use Eastern time. Goals are editable and are not official company targets.
+For example, a customer starts with Internet, Video and Voice. Keeping Video and Voice and disconnecting Internet gives **TP → DP**. Video and Voice each earn a save. Internet records one opportunity and zero saves. This call counts once in overall save rate because the customer kept an original service.
 
-Mixed outcomes show the save code alongside a tag for each disconnected service (for example, **DPS** and **Internet disconnected**). They appear under both **Saves** and **Disconnects** in the call log. The same tags appear in recent calls, the entry preview, and call details.
+Triple-play includes accounts starting with three or four services. A four-to-three downgrade is labeled **TP (4 → 3)**. Added services earn service credit independently of how the original services turned out.
+
+A **wash** pairs two accounts on the same call that started with exactly the same services when one kept every original service and the other disconnected every original service. Each account can participate in one pair. Paired original outcomes are excluded from service, play, bundle, and overall results. Added services and mobile sales still earn credit. Other accounts on the same call score normally. Overall save rate counts one opportunity per call with an unpaired account and one success if any such account kept an original service.
+
+### Mobile orders and mobiles sold
+
+Each mobile order contains **1–12 mobiles**. A call can contain multiple orders. Across ten calls, one order for three mobiles gives a **10% order rate** and a **30% line rate**. Every call contributes once to each sales denominator, including calls with several customer accounts or a wash. Adding mobile service to an account earns one mobile service save. Record the sold lines in the mobile order controls.
+
+Daily reports use Eastern time. Goals are editable. Existing single-account records and imported history use the same scoring rules.
+
+### Callback reminders
+
+Choose a callback date and time, add an optional note, and confirm that your supervisor approved the callback. Save the call to keep its reminder. The workspace shows due callbacks while it is open and checks for overdue callbacks when you return.
 
 ## Accounts and storage
 
@@ -43,7 +57,7 @@ There are no runtime npm dependencies. To run locally with an already configured
 
 ## Backups and limits
 
-Export CSV for reporting or JSON for full backup/restore. Restore merges records atomically, skips identical entries, and rejects conflicts without overwriting them. Backups include any entered call/account identifiers.
+Export CSV for reporting or download a JSON backup for a full restore. Open **How your numbers work → Restore backup** and select the JSON file. Restore merges records atomically, skips identical entries, and rejects conflicts without overwriting them. Backups include customer account details, any entered identifiers, and saved callback notes.
 
 Version 2 backups with 0–12 mobiles on a call migrate to zero or one order. Legacy counts over 12 cannot reveal the number of orders and must be corrected into actual order quantities before import; the app never invents an order split. Version 3 preserves every order quantity.
 

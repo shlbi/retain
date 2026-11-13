@@ -6,7 +6,9 @@ export const MAX_BACKUP_CALLS = 10000;
 export const MAX_MOBILE_ORDERS = 20;
 export const MAX_LINES_PER_ORDER = 12;
 const SERVICE_KEYS = SERVICES.map(service => service.key);
-const RECORD_FIELDS = ['id','day','time','order','ucid','account','before','kept','mobileOrders','sold','soldLines','revision'];
+const ACCOUNT_FIELDS = ['account', 'before', 'kept', 'added'];
+const RECORD_FIELDS = ['id','day','time','order','ucid','account','before','kept','accounts','callback','mobileOrders','sold','soldLines','revision'];
+const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?Z$/;
 
 /** Carry stable validation categories with messages suitable for the call form or import UI. */
 export class StorageError extends Error {
@@ -62,29 +64,106 @@ function mobileOrders(value, allowLegacy) {
   return {mobileOrders:orders, sold, soldLines};
 }
 
+function validTimestamp(value) {
+  return typeof value === 'string' && UTC_TIMESTAMP.test(value)
+    && validDay(value.slice(0, 10)) && Number.isFinite(Date.parse(value));
+}
+
+function serviceList(value, allowed, message, required = false) {
+  if (!Array.isArray(value) || (required && value.length === 0)
+    || value.length > allowed.length || new Set(value).size !== value.length
+    || Array.from(value).some(key => !allowed.includes(key))) {
+    throw new StorageError('VALIDATION', message);
+  }
+  return SERVICE_KEYS.filter(key => value.includes(key));
+}
+
+function validateAccount(value) {
+  object(value, 'Account');
+  fields(value, ACCOUNT_FIELDS, 'Account');
+  const account = identifier(value.account, 'Account number', true);
+  const before = serviceList(value.before, SERVICE_KEYS, 'Choose 1–4 distinct starting services.', true);
+  const kept = serviceList(value.kept, before, 'Kept services must be distinct services the account started with.');
+  const available = SERVICE_KEYS.filter(key => !before.includes(key));
+  const added = serviceList(value.added === undefined ? [] : value.added, available,
+    'Added services must be distinct services the account did not start with.');
+  return {account, before, kept, added};
+}
+
+function callAccounts(value) {
+  if (value.accounts === undefined) {
+    const {account, before, kept} = validateAccount({
+      account: value.account, before: value.before, kept: value.kept
+    });
+    return {account, before, kept};
+  }
+  if (!Array.isArray(value.accounts) || !value.accounts.length) {
+    throw new StorageError('VALIDATION', 'A call must include at least one account.');
+  }
+  const accounts = Array.from(value.accounts, validateAccount);
+  const {account, before, kept} = accounts[0];
+  // Older clients use these three aliases. Reject inconsistent backup data.
+  const aliases = validateAccount({
+    account: value.account === undefined ? account : value.account,
+    before: value.before === undefined ? before : value.before,
+    kept: value.kept === undefined ? kept : value.kept
+  });
+  if (aliases.account !== account || aliases.before.join() !== before.join()
+    || aliases.kept.join() !== kept.join()) {
+    throw new StorageError('VALIDATION', 'Call account number and services must match the first account.');
+  }
+  return {account, before, kept, accounts};
+}
+
+function validateCallback(value) {
+  if (value === null) return null;
+  object(value, 'Callback');
+  fields(value, ['dueAt', 'note', 'status', 'approved'], 'Callback');
+  if (value.approved !== true) {
+    throw new StorageError('VALIDATION', 'Confirm supervisor approval before scheduling a callback.');
+  }
+  if (!validTimestamp(value.dueAt)) {
+    throw new StorageError('VALIDATION', 'Choose a valid callback date and time.');
+  }
+  if (!['scheduled', 'done'].includes(value.status)) {
+    throw new StorageError('VALIDATION', 'Choose a valid callback status.');
+  }
+  if (typeof value.note !== 'string' || value.note.length > 4000 || Array.from(value.note).length > 2000
+    || /[\u0000\p{Cs}]/u.test(value.note)) {
+    throw new StorageError('VALIDATION', 'Callback notes must be text up to 2,000 characters.');
+  }
+  return {
+    dueAt: new Date(value.dueAt).toISOString(),
+    note: value.note,
+    status: value.status,
+    approved: true
+  };
+}
+
 /** Validate a call and derive canonical sales fields before persistence or metric calculation. */
 export function validateCall(value, {allowLegacy = true} = {}) {
   object(value, 'Call'); fields(value, RECORD_FIELDS, 'Call');
   const id = identifier(value.id, 'Call record ID');
   const ucid = identifier(value.ucid, 'UCID', true);
-  const account = identifier(value.account, 'Account number', true);
+  const accounts = callAccounts(value);
   if (!validDay(value.day)) throw new StorageError('VALIDATION', 'Call date must be a valid YYYY-MM-DD date.');
   if (typeof value.time !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value.time)) throw new StorageError('VALIDATION', 'Call time must be a valid 24-hour HH:mm time.');
   if (!Number.isFinite(value.order) || value.order < 0) throw new StorageError('VALIDATION', 'Call sorting time must be a nonnegative finite number.');
-  if (!Array.isArray(value.before) || value.before.length < 1 || value.before.length > SERVICE_KEYS.length || new Set(value.before).size !== value.before.length || Array.from(value.before).some(key => !SERVICE_KEYS.includes(key))) throw new StorageError('VALIDATION', 'Choose 1–4 distinct starting services.');
-  if (!Array.isArray(value.kept) || new Set(value.kept).size !== value.kept.length || Array.from(value.kept).some(key => !value.before.includes(key))) throw new StorageError('VALIDATION', 'Kept services must be distinct services the customer started with.');
   if (value.revision !== undefined && (!Number.isSafeInteger(value.revision) || value.revision < 1)) throw new StorageError('VALIDATION', 'Call revision must be a positive integer.');
   const sales = mobileOrders(value, allowLegacy);
-  return {id,day:value.day,time:value.time,order:value.order,ucid,account,before:SERVICE_KEYS.filter(key=>value.before.includes(key)),kept:SERVICE_KEYS.filter(key=>value.kept.includes(key)),...sales,revision:value.revision ?? 1};
+  const call = {id, day: value.day, time: value.time, order: value.order, ucid, ...accounts, ...sales, revision: value.revision ?? 1};
+  if (value.callback !== undefined) call.callback = validateCallback(value.callback);
+  return call;
 }
 
-/** Require every known goal; version 2 alone may omit the newly introduced orders target. */
+/** Existing backups can predate the bundle goal. Version 2 also predates the orders goal. */
 export function validateGoals(value, version = SCHEMA_VERSION) {
   object(value, 'Goals'); fields(value, Object.keys(DEFAULT_GOALS), 'Goals');
   if (![2,SCHEMA_VERSION].includes(version)) throw new StorageError('VALIDATION', 'Unsupported goals schema version.');
   const goals = {};
   for (const key of Object.keys(DEFAULT_GOALS)) {
-    const candidate = version === 2 && key === 'orders' && value[key] === undefined ? DEFAULT_GOALS.orders : value[key];
+    const introducedLater = key === 'bundle' || (version === 2 && key === 'orders');
+    const candidate = introducedLater && value[key] === undefined ? DEFAULT_GOALS[key] : value[key];
     if (!Number.isInteger(candidate) || candidate < 5 || candidate > 100) throw new StorageError('VALIDATION', `The ${key} goal must be a whole percentage from 5 to 100.`);
     goals[key] = candidate;
   }
@@ -106,7 +185,7 @@ export function validateBackup(value) {
   object(value, 'Backup'); fields(value, ['version','calls','goals','exportedAt'], 'Backup');
   if (![2,SCHEMA_VERSION].includes(value.version)) throw new StorageError('VALIDATION', 'Choose a version 2 or version 3 call-tracker backup.');
   if (!Array.isArray(value.calls) || value.calls.length > MAX_BACKUP_CALLS) throw new StorageError('VALIDATION', `A backup must contain at most ${MAX_BACKUP_CALLS.toLocaleString('en-US')} calls.`);
-  if (value.exportedAt !== undefined && (typeof value.exportedAt !== 'string' || !/^\d{4}-\d\d-\d\dT(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?Z$/.test(value.exportedAt) || !validDay(value.exportedAt.slice(0,10)) || !Number.isFinite(Date.parse(value.exportedAt)))) throw new StorageError('VALIDATION', 'The backup export timestamp is invalid.');
+  if (value.exportedAt !== undefined && !validTimestamp(value.exportedAt)) throw new StorageError('VALIDATION', 'The backup export timestamp is invalid.');
   const calls = value.calls.map(call=>validateCall(call,{allowLegacy:value.version===2}));
   uniqueCalls(calls);
   const result = {version:SCHEMA_VERSION,calls,goals:validateGoals(value.goals,value.version)};
@@ -124,10 +203,16 @@ export function parseBackup(text) {
 }
 
 /** Compare canonical records while ignoring concurrency revisions and UCID letter case. */
+function comparableCall(call) {
+  const {revision, accounts, callback, ...core} = call;
+  core.ucid = core.ucid.toLowerCase();
+  if (accounts && (accounts.length !== 1 || accounts[0].added.length)) core.accounts = accounts;
+  if (callback) core.callback = callback;
+  return JSON.stringify(core);
+}
+
 function sameCall(a, b) {
-  const {revision:revisionA,...left} = a, {revision:revisionB,...right} = b;
-  left.ucid = left.ucid.toLowerCase(); right.ucid = right.ucid.toLowerCase();
-  return JSON.stringify(left) === JSON.stringify(right);
+  return comparableCall(a) === comparableCall(b);
 }
 
 /** Produce a conflict-free import plan without mutating existing data or deduplicating blank UCIDs. */

@@ -12,7 +12,7 @@ function legacyCall(overrides={}) { const result=call({sold:true,soldLines:4,...
 
 test('version 3 round trip preserves leading zeros and the separate order sizes',()=>{
   const result=parseBackup(JSON.stringify(backup()));
-  assert.equal(result.version,3);assert.equal(result.calls[0].account,'0000012345');assert.deepEqual(result.calls[0].mobileOrders,[2,3]);assert.equal(result.calls[0].soldLines,5);assert.equal(Object.keys(result.goals).length,10);
+  assert.equal(result.version,3);assert.equal(result.calls[0].account,'0000012345');assert.deepEqual(result.calls[0].mobileOrders,[2,3]);assert.equal(result.calls[0].soldLines,5);assert.equal(Object.keys(result.goals).length,11);
 });
 test('optional missing or whitespace-only UCID and account normalize to empty strings',()=>{
   const input=call({ucid:'   ',account:'   '});const result=validateCall(input);
@@ -46,7 +46,7 @@ test('version 2 backup upgrades to version 3 and defaults only the missing order
   assert.equal(result.version,3);assert.deepEqual(result.calls[0].mobileOrders,[4]);assert.equal(result.goals.orders,DEFAULT_GOALS.orders);
   delete goals.tv;assert.throws(()=>validateGoals(goals,2),{code:'VALIDATION'});
 });
-test('version 3 backups require explicit mobileOrders and all ten goals',()=>{
+test('version 3 backups require explicit orders and pre-existing targets',()=>{
   assert.throws(()=>validateBackup(backup([legacyCall()])),{code:'VALIDATION'});
   const goals={...DEFAULT_GOALS};delete goals.orders;assert.throws(()=>validateGoals(goals),{code:'VALIDATION'});
   assert.throws(()=>validateGoals({...DEFAULT_GOALS,unexpected:20}),{code:'VALIDATION'});
@@ -75,6 +75,69 @@ test('conflicting content or IDs reject the full merge without mutating original
 });
 test('services must stay unique and kept services must have existed at the start',()=>{
   for(const overrides of [{before:[]},{before:Array(1)},{before:['tv','tv']},{before:['satellite']},{kept:Array(1)},{kept:['mobile']},{kept:['tv','tv']}])assert.throws(()=>validateCall(call(overrides)),{code:'VALIDATION'});
+});
+
+const secondAccount = {account:'00002',before:['tv','phone'],kept:[],added:['mobile']};
+const approvedCallback = {dueAt:'2026-11-14T02:00:00Z',note:'Call after work.\nAsk for Pat.',approved:true,status:'scheduled'};
+
+test('multiple accounts and approved callback survive backup validation, including leading zeros and multiline notes',()=>{
+  const accounts = [
+    {account:' 0000012345 ',before:['tv','internet'],kept:['tv'],added:['phone']},
+    secondAccount
+  ];
+  const input = call({accounts,callback:approvedCallback});
+  delete input.account; delete input.before; delete input.kept;
+  const result = parseBackup(JSON.stringify(backup([input]))).calls[0];
+  assert.equal(result.account,'0000012345');
+  assert.deepEqual(result.before,['internet','tv']);
+  assert.deepEqual(result.kept,['tv']);
+  assert.deepEqual(result.accounts[0],{account:'0000012345',before:['internet','tv'],kept:['tv'],added:['phone']});
+  assert.deepEqual(result.accounts[1],secondAccount);
+  assert.deepEqual(result.callback,{...approvedCallback,dueAt:'2026-11-14T02:00:00.000Z'});
+  assert.deepEqual(validateCall({...result,callback:null}).callback,null);
+  assert.equal(validateCall({...result,callback:{...approvedCallback,status:'done'}}).callback.status,'done');
+});
+
+test('account validation rejects contradictory aliases, overlapping additions and invalid nested data',()=>{
+  const first = {account:'0000012345',before:['internet','tv'],kept:['tv'],added:[]};
+  for (const accounts of [
+    [], null, [first, null], [{...first,account:'different'}],
+    [{...first,before:['tv','phone']}], [{...first,kept:['internet']}],
+    [first,{...secondAccount,added:['phone']}], [first,{...secondAccount,added:['mobile','mobile']}],
+    [first,{...secondAccount,added:['fax']}], [first,{...secondAccount,added:null}],
+    [first,{...secondAccount,extra:'unrecognized'}]
+  ]) {
+    assert.throws(()=>validateCall(call({accounts})),{code:'VALIDATION'});
+  }
+  const many = [first,...Array.from({length:100},()=>({...secondAccount,account:''}))];
+  assert.equal(validateCall(call({accounts:many})).accounts.length,101);
+});
+
+test('callbacks require affirmative approval and a valid UTC calendar timestamp',()=>{
+  for (const overrides of [
+    {approved:false}, {approved:'yes'}, {dueAt:'2026-02-30T20:00:00Z'},
+    {dueAt:'2026-11-14T02:00'}, {status:'later'}, {note:42}, {note:'x'.repeat(2001)},
+    {note:'unpaired surrogate\uD800'}, {note:'null\x00byte'}
+  ]) {
+    assert.throws(()=>validateCall(call({callback:{...approvedCallback,...overrides}})),{code:'VALIDATION'});
+  }
+  assert.equal(validateCall(call({callback:{...approvedCallback,note:'💬'.repeat(2000)}})).callback.note.length,4000);
+});
+
+test('old backups inherit only the missing bundle target and merge with equivalent upgraded calls',()=>{
+  const goals = {...DEFAULT_GOALS};
+  delete goals.bundle;
+  const legacy = call();
+  assert.equal(validateBackup(backup([legacy],{goals})).goals.bundle,80);
+  const explicit = {...legacy,accounts:[{account:legacy.account,before:legacy.before,kept:legacy.kept,added:[]}],callback:null};
+  assert.deepEqual(planImport([legacy],[explicit]),{skipped:1,additions:[]});
+  for (const changed of [
+    {...explicit,accounts:[...explicit.accounts,secondAccount]},
+    {...explicit,accounts:[{...explicit.accounts[0],added:['mobile']}]},
+    {...explicit,callback:approvedCallback}
+  ]) {
+    assert.throws(()=>planImport([legacy],[changed]),{code:'CONFLICT'});
+  }
 });
 test('backup limits stay under server request limits and reject malformed or oversized imports',()=>{
   assert.equal(SCHEMA_VERSION,3);assert.equal(MAX_BACKUP_BYTES,3*1024*1024);assert.equal(MAX_BACKUP_CALLS,10000);

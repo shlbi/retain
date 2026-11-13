@@ -1,34 +1,123 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyCall, calculateMetrics, successesNeeded, ordersFor, soldOrdersFor, soldLinesFor, dayKey } from '../dist/model.js';
+import { accountsFor, classifyAccount, outcomesForCall, classifyCall, calculateMetrics, successesNeeded, ordersFor, soldOrdersFor, soldLinesFor, dayKey } from '../dist/model.js';
 
 /** Build the minimal call facts needed to exercise metric rules. */
 function call(before, kept, soldLines = 0) { return { before, kept, soldLines }; }
 /** Retrieve one named metric from a set of call facts. */
 function metric(calls, key, goals) { return calculateMetrics(calls, goals).find(item => item.key === key); }
 
-test('three-to-two downgrade is DPS with internet disconnected', () => {
-  assert.deepEqual(classifyCall(['internet', 'tv', 'phone'], ['tv', 'phone']), { code:'DPS', saved:true, tier:2, disconnected:['internet'] });
+test('single-service accounts score their service and single-play on full saves and losses', () => {
+  for (const service of ['internet', 'tv', 'phone', 'mobile']) {
+    const calls = [call([service], [service]), call([service], [])];
+    assert.deepEqual(calls.map(c => classifyCall(c.before, c.kept).code), ['SPS', 'SPD']);
+    assert.equal(metric(calls, service).rate, 50);
+    assert.equal(metric(calls, 'sp').rate, 50);
+    assert.equal(metric(calls, 'bundle').rate, null);
+  }
 });
 
-test('all six fixed outcomes use the correct starting or remaining play', () => {
+test('full bundle outcomes score each original service, the starting tier, and bundle rate', () => {
+  const dp = ['tv','internet'];
+  const tp = ['tv','internet','phone'];
+  const calls = [call(dp, dp), call(dp, []), call(tp, tp)];
+  assert.deepEqual(calls.map(c => classifyCall(c.before, c.kept).code), ['DPS','DPD','TPS']);
+  assert.equal(metric(calls, 'dp').rate, 50);
+  assert.equal(metric(calls, 'tp').rate, 100);
+  assert.equal(metric(calls, 'sp').total, 0);
+  for (const key of ['internet','tv','bundle']) {
+    assert.equal(metric(calls, key).successes, 2);
+    assert.equal(metric(calls, key).total, 3);
+  }
+  assert.equal(metric(calls,'phone').total, 1);
+});
+
+test('downgrades on both new and historical records exclude every play tier and bundle', () => {
   const examples = [
-    [['tv'], ['tv'], 'SPS'], [['tv'], [], 'SPD'],
-    [['tv', 'internet'], ['tv', 'internet'], 'DPS'], [['tv', 'internet'], [], 'DPD'],
-    [['tv', 'internet', 'phone'], ['tv', 'internet', 'phone'], 'TPS'], [['tv', 'internet', 'phone'], [], 'TPD']
+    [['internet','tv'], ['tv'], 'DP → SP'],
+    [['internet','tv','phone'], ['tv','phone'], 'TP → DP'],
+    [['internet','tv','phone'], ['phone'], 'TP → SP'],
+    [['internet','tv','phone','mobile'], ['tv','phone','mobile'], 'TP (4 → 3)']
   ];
-  for (const [before, kept, code] of examples) assert.equal(classifyCall(before, kept).code, code);
-  assert.equal(classifyCall(['tv', 'internet', 'phone'], ['tv']).code, 'SPS');
+  for (const [before,kept,code] of examples) {
+    const account = {account:'A', before, kept, added:[]};
+    for (const record of [account, {accounts:[account]}]) {
+      const [outcome] = outcomesForCall(record);
+      assert.equal(outcome.code, code);
+      assert.equal(outcome.kind, 'downgrade');
+      assert.equal(outcome.washed, false);
+      for (const key of ['sp','dp','tp','bundle']) assert.equal(metric([record],key).total, 0);
+      for (const key of before) {
+        const service = metric([record],key);
+        assert.equal(service.total, 1);
+        assert.equal(service.successes, Number(kept.includes(key)));
+      }
+      assert.equal(metric([record],'overall').rate, 100);
+    }
+  }
 });
 
-test('a bundle save loses internet while retaining TV and phone numerators', () => {
-  const calls = [call(['internet', 'tv', 'phone'], ['tv', 'phone'])];
-  assert.equal(metric(calls, 'overall').rate, 100);
-  assert.equal(metric(calls, 'dp').rate, 100);
-  assert.equal(metric(calls, 'internet').successes, 0);
-  assert.equal(metric(calls, 'internet').total, 1);
-  assert.equal(metric(calls, 'tv').rate, 100);
-  assert.equal(metric(calls, 'phone').rate, 100);
+test('new services earn one opportunity and one save, independently of the starting tier and lines sold', () => {
+  const record = {accounts:[{account:'A', before:['internet','tv'], kept:['tv'], added:['mobile','phone']}],mobileOrders:[12,3]};
+  assert.equal(outcomesForCall(record)[0].code, 'DP → SP');
+  for (const key of ['mobile','phone']) {
+    assert.equal(metric([record], key).successes, 1);
+    assert.equal(metric([record], key).total, 1);
+  }
+  assert.equal(metric([record], 'orders').successes, 2);
+  assert.equal(metric([record], 'sales').successes, 15);
+  assert.equal(metric([record], 'bundle').total, 0);
+  assert.equal(metric([record], 'internet').rate, 0);
+});
+
+test('wash pairs match by starting service set within one call and only cancel one account on each side', () => {
+  const accounts = [
+    {account:'A',before:['tv','internet'],kept:['internet','tv'],added:['phone']},
+    {account:'B',before:['internet','tv'],kept:[]},
+    {account:'C',before:['tv','internet'],kept:['tv','internet']},
+    {account:'D',before:['mobile'],kept:[]}
+  ];
+  const record = {accounts, mobileOrders:[2,4]};
+  const outcomes = outcomesForCall(record);
+  assert.deepEqual(outcomes.map(o => [o.index, o.account, o.washed]), [
+    [0,'A',true], [1,'B',true], [2,'C',false], [3,'D',false]
+  ]);
+  for (const key of ['dp','bundle','tv','internet','phone']) {
+    const result = metric([record],key);
+    assert.equal(result.successes, 1);
+    assert.equal(result.total, 1);
+  }
+  assert.equal(metric([record], 'mobile').rate, 0);
+  assert.equal(metric([record], 'sp').rate, 0);
+  assert.equal(metric([record], 'overall').total, 1);
+  assert.equal(metric([record], 'overall').rate, 100);
+  assert.equal(metric([record], 'orders').total, 1);
+  assert.equal(metric([record], 'orders').successes, 2);
+  assert.equal(metric([record], 'sales').successes, 6);
+
+  const washOnly = {accounts: accounts.slice(0, 2), mobileOrders:[3]};
+  for (const key of ['overall','bundle','dp','tv','internet']) assert.equal(metric([washOnly],key).total, 0);
+  assert.equal(metric([washOnly],'phone').rate, 100);
+  assert.equal(metric([washOnly],'sales').rate, 300);
+});
+
+test('similar but different bundles, separate calls, and partial saves do not wash', () => {
+  const saved = call(['tv','internet'],['tv','internet']);
+  const lost = call(['internet','mobile'],[]);
+  const downgrade = call(['internet','mobile'],['mobile']);
+  assert.deepEqual(outcomesForCall({accounts:[saved,lost,downgrade]}).map(o=>o.washed),[false,false,false]);
+  const separate = [saved, call(saved.before,[])];
+  assert.equal(metric(separate,'bundle').rate,50);
+  assert.equal(metric(separate,'overall').total,2);
+});
+
+test('account reader handles legacy data and uses explicit new account facts in preference to old mirrors', () => {
+  const old = {account:'A',before:['tv'],kept:['tv']};
+  assert.deepEqual(accountsFor(old),[{...old,added:[]}]);
+  const modern = {...old,accounts:[{account:'B',before:['mobile'],kept:[],added:['phone']}]};
+  assert.equal(outcomesForCall(modern)[0].account, 'B');
+  assert.equal(metric([modern],'tv').total, 0);
+  assert.equal(classifyAccount({before:['phone'],kept:['phone'],added:['phone']}).added.length,0);
 });
 
 test('one mobile line sold across ten calls is ten percent', () => {
@@ -52,7 +141,7 @@ test('existing mobile loss and new mobile line sales remain independent', () => 
   const calls = [call(['internet', 'mobile'], ['internet'], 2)];
   assert.equal(metric(calls, 'mobile').rate, 0);
   assert.equal(metric(calls, 'sales').rate, 200);
-  assert.equal(classifyCall(calls[0].before, calls[0].kept).code, 'SPS');
+  assert.equal(classifyCall(calls[0].before, calls[0].kept).code, 'DP → SP');
 });
 
 test('legacy line helper prefers explicit zero and accepts one order of at most twelve lines', () => {
@@ -155,7 +244,7 @@ test('mobile counts as a service and TP explicitly groups three or four services
   assert.equal(classifyCall(['mobile'], ['mobile']).code, 'SPS');
   assert.equal(classifyCall(all, all).code, 'TPS');
   assert.equal(classifyCall(all, []).code, 'TPD');
-  assert.equal(classifyCall(all, ['internet', 'mobile']).code, 'DPS');
+  assert.equal(classifyCall(all, ['internet', 'mobile']).code, 'TP → DP');
   const tp = metric([call(all, all), call(all, [])], 'tp');
   assert.equal(tp.rate, 50);
   assert.equal(tp.label, 'Triple-play (3+)');

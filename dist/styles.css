@@ -275,3 +275,30 @@ body{line-height:1.45}
   .input-stack label{font-size:11px}
   .optional-label{font-size:10px}
 }
+
+/* Keep account outcomes and their service changes legible in compact history rows. */
+.outcome-group{display:block;min-width:0}
+.outcome-group + .outcome-group,.history-order{margin-top:8px}
+.account-caption,.history-callback{display:block;font-size:10px;line-height:1.5;color:#526a85}
+.account-caption{margin-bottom:3px;font-weight:600}
+.history-callback{margin-top:5px}
+.wash-result{align-self:center;font-size:10px;color:#586e86}
+.badge.downgrade{background:#e8eefc;color:#354f8d}
+.badge.added{background:#e6f2fa;color:#225e83}
+.call-table td{vertical-align:top}
+.call-table th:nth-child(3){width:21%}
+.call-table th:nth-child(4){width:33%}
+.call-toolbar,.filter-tabs{flex-wrap:wrap}
+.detail-account{border-top:1px solid var(--line);padding:16px 0}
+.detail-account h3{font-size:14px;margin:0}
+.dialog-body .detail-account-number{margin:3px 0 9px;overflow-wrap:anywhere}
+.service-results{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.callback-note-text{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:760px){
+  .call-table th:nth-child(2){width:30%}
+  .call-table th:nth-child(3){width:24%}
+  .call-table th:nth-child(4){width:39%}
+  .filter-tabs{justify-content:flex-start;gap:2px}
+}
+
+.dialog-actions{flex-wrap:wrap}

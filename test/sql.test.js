@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { DEFAULT_GOALS } from '../dist/model.js';
-import { MAX_BACKUP_BYTES } from '../dist/validation.js';
+import { MAX_BACKUP_BYTES, validateCall } from '../dist/validation.js';
 
-let db;
+let db, upgradeUser, legacyState;
 before(async()=>{
   db = new PGlite();
   await db.exec('create role anon; create role authenticated; create role service_role;');
@@ -13,6 +13,12 @@ before(async()=>{
   for (const file of (await readdir(directory)).filter(file=>file.endsWith('.sql')).sort()) {
     // Supabase's GitHub runner applies each migration in a transaction.
     await db.exec('begin;\n' + await readFile(new URL(file,directory),'utf8') + '\ncommit;');
+    if (file === '20261106005417_workspace.sql') {
+      upgradeUser = await register('pre-upgrade');
+      await save(upgradeUser,call());
+      await rpc('workspace_goal',{p_user_id:upgradeUser.id,p_key:'tv',p_value:70});
+      legacyState = await state(upgradeUser);
+    }
   }
 });
 after(async()=>{ await db?.close(); });
@@ -31,7 +37,7 @@ const state = user=>rpc('workspace_state',{p_user_id:user.id});
 const call = (overrides={})=>({id:'record1',day:'2026-11-06',time:'12:45',order:1793970000000,ucid:'UCID-001',account:'00123',before:['internet','tv'],kept:['tv'],mobileOrders:[2,1],soldLines:3,sold:true,revision:1,...overrides});
 const save = (user,record,revision=null)=>rpc('workspace_save',{p_user_id:user.id,p_call:record,p_expected_revision:revision});
 
-test('SQL registers case-insensitive usernames and returns ten defaults for an empty workspace',async()=>{
+test('SQL registers case-insensitive usernames and returns all default goals for an empty workspace',async()=>{
   const user = await register(' Agent One ');
   assert.equal(user.username,'Agent One');
   await assert.rejects(register('agent one'),/DUPLICATE/);
@@ -103,6 +109,84 @@ test('SQL backup merge preserves explicit goals and rolls back all writes on a l
   assert.equal((await db.query('select count(*)::int as count from workspace_private.call_versions where user_id=$1 and id=$2',[user.id,'rollback'])).rows[0].count,0);
   await assert.rejects(rpc('workspace_import',{p_user_id:user.id,p_backup:{...backup,calls:[call({id:'dupe',ucid:''}),call({id:'dupe',ucid:''})]}}),/VALIDATION/);
   assert.deepEqual(await state(user),before);
+});
+
+
+test('upgrading a populated workspace preserves legacy calls, goal overrides and backup compatibility',async()=>{
+  const user = upgradeUser;
+  assert.equal('bundle' in legacyState.goals,false);
+  assert.deepEqual(await state(user),{...legacyState,goals:{...legacyState.goals,bundle:80}});
+  await rpc('workspace_goal',{p_user_id:user.id,p_key:'bundle',p_value:90});
+  const original = legacyState.calls[0];
+  const account = {account:original.account,before:original.before,kept:original.kept};
+  const explicit = {...original,accounts:[account],callback:null};
+  for (const record of [original,explicit]) {
+    assert.deepEqual(await rpc('workspace_import',{p_user_id:user.id,p_backup:{...legacyState,calls:[record]}}),{imported:0,skipped:1});
+  }
+  assert.equal((await state(user)).goals.bundle,90);
+  const updated = await save(user,explicit,original.revision);
+  assert.deepEqual(updated.accounts,[{...account,added:[]}]);
+  assert.deepEqual(await rpc('workspace_import',{p_user_id:user.id,p_backup:legacyState}),{imported:0,skipped:1});
+  const {sp, ...incomplete} = legacyState.goals;
+  await assert.rejects(rpc('workspace_import',{p_user_id:user.id,p_backup:{...legacyState,goals:incomplete}}),/VALIDATION/);
+});
+
+test('SQL stores all accounts and approved callbacks on save, edit, undo and export/import',async()=>{
+  const user = await register('multiple accounts'), other = await register('other accounts');
+  const {account,before,kept,...base} = call();
+  const accounts = [
+    {account:' 00123 ',before:['tv','internet'],kept:['tv'],added:['mobile','phone']},
+    {before:['internet','tv'],kept:[]},
+    ...Array.from({length:24},(_,i)=>({account:String(i),before:['mobile'],kept:['mobile']}))
+  ];
+  const callback = {approved:true,dueAt:'2028-02-29T16:23:01.1Z',note:'Check order\nCall back after lunch',status:'scheduled'};
+  const raw = {...base,accounts,callback};
+  const stored = await save(user,raw);
+  assert.deepEqual(stored,validateCall(raw));
+  assert.deepEqual((await state(user)).calls,[stored]);
+  assert.deepEqual((await state(other)).calls,[]);
+  const {accounts:omitAccounts,...withoutAccounts} = stored;
+  const {callback:omitCallback,...withoutCallback} = stored;
+  await assert.rejects(save(user,withoutAccounts,stored.revision),/CONFLICT/);
+  await assert.rejects(save(user,withoutCallback,stored.revision),/CONFLICT/);
+  assert.deepEqual((await state(user)).calls,[stored]);
+  const done = await save(user,{...stored,callback:{...stored.callback,status:'done'}},stored.revision);
+  assert.equal(done.callback.status,'done');
+  const removed = await rpc('workspace_remove',{p_user_id:user.id,p_id:done.id,p_expected_revision:done.revision});
+  const restored = await rpc('workspace_restore',{p_user_id:user.id,p_call:removed});
+  assert.deepEqual(restored,{...done,revision:done.revision+2});
+  const backup = await state(user);
+  const importBackup = p_backup=>rpc('workspace_import',{p_user_id:other.id,p_backup});
+  assert.deepEqual(await importBackup(backup),{imported:1,skipped:0});
+  assert.deepEqual(await importBackup(backup),{imported:0,skipped:1});
+  assert.deepEqual((await state(other)).calls,[{...restored,revision:1}]);
+  await assert.rejects(importBackup({...backup,calls:[{...restored,callback:null}]}),/CONFLICT/);
+  const cleared = await save(user,{...restored,accounts:[restored.accounts[0]],callback:null},restored.revision);
+  assert.equal(cleared.callback,null);
+  assert.equal(cleared.accounts.length,1);
+  // A single-account call may still carry new services that an old client would drop.
+  await assert.rejects(save(user,call(),cleared.revision),/CONFLICT/);
+});
+
+test('SQL rejects invalid service changes, inconsistent aliases and unapproved or malformed callbacks',async()=>{
+  const user = await register('account validation');
+  const valid = {account:'00123',before:['internet','tv'],kept:['tv'],added:['phone']};
+  for (const accounts of [null,[],[null],[{...valid,other:true}],[{...valid,added:null}],
+    [{...valid,added:['internet']}],[{...valid,added:['phone','phone']}],[{...valid,added:['fax']}],
+    [valid,{before:['internet'],kept:['phone']}],[{...valid,account:'conflicting'}]]) {
+    await assert.rejects(save(user,call({accounts})),/VALIDATION/);
+  }
+  const callback = {approved:true,dueAt:'2028-02-29T13:00:00Z',note:'',status:'scheduled'};
+  for (const invalid of [false,{}, {...callback,approved:false}, {...callback,approved:'true'},
+    {...callback,dueAt:'2027-02-29T13:00:00Z'}, {...callback,dueAt:'2028-02-29T24:00:00Z'},
+    {...callback,dueAt:'2028-02-29T13:00:00-05:00'}, {...callback,dueAt:'0000-01-01T00:00:00Z'},
+    {...callback,note:'🐱'.repeat(2001)}, {...callback,status:'cancelled'}, {...callback,extra:true}]) {
+    await assert.rejects(save(user,call({callback:invalid})),/VALIDATION/);
+  }
+  assert.deepEqual((await state(user)).calls,[]);
+  const stored = await save(user,call({callback:{...callback,note:'🐱'.repeat(2000)}}));
+  assert.equal(stored.callback.dueAt,'2028-02-29T13:00:00.000Z');
+  assert.deepEqual(stored.callback.note,'🐱'.repeat(2000));
 });
 
 test('SQL rejects malformed calls even when the JavaScript validator is bypassed',async()=>{

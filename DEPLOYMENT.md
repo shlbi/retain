@@ -8,9 +8,11 @@ The Supabase project **retain** is connected to **shlbi/retain**. In Supabase �
 
 On each push to `main`, Supabase applies unapplied SQL files from `supabase/migrations/` and records their versions. No separate GitHub Action or manual SQL-editor execution is needed. Check the Supabase deployment status after pushing; the GitHub test job only validates the app, not the hosted database deployment.
 
-Keep applied migration files unchanged. For future schema changes, run `supabase migration new descriptive_name`, put the SQL in the generated file, test it, and commit it. Never rerun the initial schema in the SQL editor or rename a migration already recorded by Supabase. The migration creates the tables and functions without sample accounts or calls.
+Keep applied migration files unchanged. For future schema changes, run `supabase migration new descriptive_name`, put the SQL in the generated file, test it, and commit it. Never rerun the initial schema in the SQL editor or rename a migration already recorded by Supabase. The initial migration creates the tables and functions. The follow-up account outcomes and callbacks migration updates validation and the bundle goal. Existing single-account records remain readable and are scored from their original and kept services.
 
 This app uses Supabase **Postgres**, with its own username/password authentication. It does not create Supabase Auth users, so email confirmation settings and Supabase Auth password rules do not affect signup. Data is stored in a private schema; public RPC functions are executable only by `service_role`. The browser cannot call those functions directly.
+
+For an existing deployment, verify that Supabase lists migration versions `20261106005417` and `20261113022327` before saving a call with extra accounts, added services, or a callback. The second version is the upgrade for a database already initialized with the first migration.
 
 ## 2. Set Vercel server environment variables
 
@@ -33,7 +35,10 @@ Use separate Supabase projects for production and previews if preview builds sho
 
 - Create an account with a username and a simple password. There is no email step.
 - Save a call with both IDs blank. Reload and confirm it remains saved.
-- Add one order with 3 mobiles. Confirm 1 order and 3 mobiles, with separate rate rings.
+- Start a triple-play account with Internet, Video and Voice. Keep Video and Voice. Confirm **TP → DP** and an Internet disconnect in the call log. The service rings include the account and the play and bundle rings exclude it.
+- On another call, add a second account with the same original services as the first. Keep all originals on one and disconnect all on the other. Confirm the wash and check that the call contributes once to the sales denominator.
+- Add mobile service and one order with 3 mobiles. Confirm one mobile service save, one order, and three sold lines.
+- Schedule a callback with a note. Check that Cancel leaves the change unscheduled and Yes lets you save it. Reopen the app after the due time and confirm the reminder and note are available.
 - Sign in from another browser/device and confirm the same records.
 - Sign out and create a different account. It must start with no calls.
 - Try a stale edit from a second tab, export/restore a backup, and check phone layout.
@@ -42,7 +47,7 @@ Without the Supabase variables or migration, the app shows a setup/storage error
 
 ## Existing browser-local records
 
-Before replacing the previous local-only version, download its JSON backup. After signing in to the new version, use **Daily goals → Records & backups → Restore a backup**. Review the restored count. The app never uploads another browser user's local database automatically.
+Before replacing the previous local-only version, download its JSON backup. After signing in to the new version, use **How your numbers work → Restore backup**. Review the restored count. The app never uploads another browser user's local database automatically.
 
 Cloud records belong to the Supabase project and account, so a domain change does not move or erase them. Sign in again on the new domain. Keep the same Supabase configuration to access the same data.
 

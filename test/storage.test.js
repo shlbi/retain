@@ -47,7 +47,7 @@ test('empty customer identifiers and multiple mobile orders are canonical on rea
   assert.deepEqual(remote.requests[0].data.call,saved);
   const loaded=await repository.read();
   assert.equal(loaded.calls[0].ucid,'');assert.equal(loaded.calls[0].account,'');assert.equal(loaded.calls[0].soldLines,5);
-  assert.equal(Object.keys(loaded.goals).length,10);
+  assert.equal(Object.keys(loaded.goals).length,11);
 });
 
 test('save and deletion forward exact optimistic revisions and expose server revision updates',async()=>{
@@ -59,6 +59,25 @@ test('save and deletion forward exact optimistic revisions and expose server rev
   assert.equal(remote.requests[0].data.expectedRevision,null);
   assert.equal(remote.requests[1].data.expectedRevision,7);
   assert.deepEqual(remote.requests[2].data,{id:'record-1',expectedRevision:8});
+});
+
+test('reading and completing a reminder preserves every account and its service changes',async()=>{
+  const accounts=[
+    {account:'001',before:['internet','tv'],kept:['tv'],added:['phone']},
+    {account:'002',before:['mobile'],kept:['mobile'],added:[]}
+  ];
+  const callback={approved:true,dueAt:'2026-11-10T20:15:00.000Z',note:'Ask about voice.',status:'scheduled'};
+  const original=record({account:'001',accounts,callback});
+  const remote=server((action,data)=>action==='state'?state([original]):{...data.call,revision:2});
+  const repository=createRepository('user-1',remote.request);
+  const {calls:[loaded]}=await repository.read();
+  assert.deepEqual(loaded.accounts,accounts);
+  assert.deepEqual(loaded.callback,callback);
+  const saved=await repository.saveCall({...loaded,callback:{...loaded.callback,status:'done'}},loaded.revision);
+  assert.deepEqual(saved.callback,{...callback,status:'done'});
+  assert.deepEqual(saved.accounts,accounts);
+  assert.deepEqual(remote.requests[1].data.call.accounts,accounts);
+  assert.equal(remote.requests[1].data.expectedRevision,1);
 });
 
 test('restore sends the deleted record including its revision and mobile order boundaries',async()=>{

@@ -1,0 +1,57 @@
+.account-switcher {
+  margin: 14px 0 0;
+  padding: 12px;
+  border: 1px solid #cbdcf0;
+  border-radius: 9px;
+  background: #f2f7fe;
+}
+
+.account-switcher label {
+  display: block;
+  margin-bottom: 5px;
+  color: #455f7c;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.account-switcher > div, .added-options {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-switcher select, .callback-fields textarea {
+  background: white;
+  border: 1px solid #cddbec;
+  color: #263a52;
+  border-radius: 7px;
+  padding: 8px 9px;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.account-switcher select { flex: 1; }
+.account-identifier { margin-top: 13px; }
+.added-services { margin: 14px 0 4px; }
+.added-services summary { cursor: pointer; color: #345f90; font-size: 12px; }
+#added-count { font-weight: 600; }
+.added-options { flex-wrap: wrap; margin-top: 8px; gap: 6px; }
+.added-options .service-button { flex-direction: row; gap: 4px; height: auto; min-height: 32px; padding: 6px 9px; }
+.added-options .service-button svg { width: 13px; height: 13px; }
+.add-an-account, .entry-callback .text-button { color: #245f9d; min-height: 34px; }
+.add-an-account { margin-top: 7px; }
+.entry-callback { border-top: 1px solid #e1e9f3; margin: 15px 0 10px; padding-top: 6px; }
+.callback-fields { margin: 4px 0 12px; }
+.callback-fields input, .callback-fields textarea { box-sizing: border-box; width: 100%; }
+.callback-fields textarea { resize: vertical; }
+.callback-fields small { color: #586f8b; font-size: 11px; }
+.callback-fields[hidden], .added-services[hidden], .account-switcher[hidden] { display: none; }
+#detail-dialog:has([data-action="confirm-callback"]) { max-width: min(400px, calc(100vw - 32px)); }
+.order-service-note { margin: 8px 0 0; color: #526983; font-size: 11px; line-height: 1.5; }
+@media (max-width: 760px) {
+  .account-switcher select, .callback-fields textarea { font-size: 16px; }
+  .added-services summary, .add-an-account, .entry-callback .text-button { padding-block: 8px; }
+  #call-form .input-stack { grid-template-columns: minmax(0, 1fr); }
+  #call-form .input-stack > * { grid-column: 1; grid-row: auto; }
+}

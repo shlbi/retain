@@ -10,6 +10,8 @@
   <title>Call workspace</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="callbacks.css">
+  <link rel="stylesheet" href="entry.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -57,6 +59,7 @@
     <main id="main" tabindex="-1">
       <noscript><p class="storage-banner">JavaScript is required to use this tracker. Enable it and reload.</p></noscript>
       <div id="storage-banner" class="storage-banner" role="alert" hidden></div>
+      <div id="callback-due-alert" class="callback-alert" hidden><strong id="callback-due-message" role="status"></strong><button type="button" class="text-button" data-action="review-callbacks">View reminders <span data-icon="arrow-right"></span></button></div>
       <div class="page-heading"><div><p class="eyebrow" id="today-date"></p><h1 id="page-title">Your day, at a glance.</h1><p class="page-description" id="page-description">Every conversation counts. See how yours add up.</p></div><button class="button primary add-call" data-action="new-call"><span data-icon="plus"></span>Log a call <kbd>N</kbd></button></div>
 
       <div class="date-control"><label for="report-date">Report date</label><input type="date" id="report-date"><button class="text-button" data-action="today">Today</button><span>Eastern time</span></div>
@@ -76,10 +79,24 @@
               <div class="entry-heading"><div><span class="entry-icon" data-icon="calls"></span><h2 id="entry-title">Log a call</h2></div><button class="icon-button close-entry" data-action="close-entry" aria-label="Close call entry"><span data-icon="close"></span></button></div>
               <p class="entry-subtitle">Add IDs if you have them. Tap the rest.</p>
               <form id="call-form" novalidate>
-                <div class="input-stack"><label for="ucid">Call UCID <span class="optional-label">(optional)</span></label><input id="ucid" name="ucid" autocomplete="off" spellcheck="false" placeholder="Paste UCID, if available" maxlength="100"><label for="account">Account number <span class="optional-label">(optional)</span></label><input id="account" name="account" autocomplete="off" spellcheck="false" placeholder="Paste account number, if available" maxlength="100"></div>
+                <div class="input-stack"><label for="ucid">Call UCID <span class="optional-label">(optional)</span></label><input id="ucid" name="ucid" autocomplete="off" spellcheck="false" placeholder="Paste UCID, if available" maxlength="100"></div>
+                <div id="account-switcher" class="account-switcher" hidden>
+                  <label for="account-select">Account on this call</label>
+                  <div><select id="account-select"></select><button type="button" class="text-button" data-action="remove-account" aria-label="Remove selected account">Remove</button></div>
+                </div>
+                <div class="input-stack account-identifier"><label for="account">Account number <span class="optional-label">(optional)</span></label><input id="account" name="account" autocomplete="off" spellcheck="false" placeholder="Paste account number, if available" maxlength="100"></div>
                 <fieldset class="start-services"><legend>Services at the start</legend><div id="start-services" class="service-selector"></div></fieldset>
                 <fieldset class="end-services"><legend>What did they keep?<span>Tap to change</span></legend><div id="end-services"></div></fieldset>
-                <section class="mobile-orders-section" aria-labelledby="mobile-orders-title"><div class="mobile-orders-heading"><span class="sale-icon" data-icon="mobile"></span><div><h3 id="mobile-orders-title">Mobile orders</h3><p>1–12 mobiles per order</p></div></div><div id="mobile-orders" class="mobile-orders" aria-live="polite" aria-relevant="additions removals text"></div><button class="button secondary add-order" type="button" data-action="add-order"><span data-icon="plus"></span>Add mobile order</button></section>
+                <details class="added-services" id="added-services-section" hidden><summary>Services added <span id="added-count"></span></summary><div id="added-services" class="added-options" role="group" aria-label="Services added during this call"></div></details>
+                <button type="button" class="text-button add-an-account" data-action="add-account"><span data-icon="plus"></span>Add another account</button>
+                <section class="mobile-orders-section" aria-labelledby="mobile-orders-title"><div class="mobile-orders-heading"><span class="sale-icon" data-icon="mobile"></span><div><h3 id="mobile-orders-title">Mobile orders</h3><p>1–12 mobiles per order, across this call.</p></div></div><p class="order-service-note">For a new mobile service, also select Mobile under Services added on its account.</p><div id="mobile-orders" class="mobile-orders" aria-live="polite" aria-relevant="additions removals text"></div><button class="button secondary add-order" type="button" data-action="add-order"><span data-icon="plus"></span>Add mobile order</button></section>
+                <section class="entry-callback" aria-label="Callback reminder">
+                  <button type="button" class="text-button" data-action="toggle-callback" aria-controls="callback-fields" aria-expanded="false"><span id="callback-toggle-icon" data-icon="plus"></span><span id="callback-toggle-label">Add callback reminder</span></button>
+                  <div id="callback-fields" class="callback-fields input-stack" hidden>
+                    <label for="callback-at">Callback date and time</label><input id="callback-at" type="datetime-local" step="60" aria-describedby="callback-zone"><small id="callback-zone"></small>
+                    <label for="callback-note">Callback note <span class="optional-label">(optional)</span></label><textarea id="callback-note" rows="2" maxlength="2000" placeholder="What do you need to follow up on?"></textarea>
+                  </div>
+                </section>
                 <div class="outcome-preview" id="outcome-preview" aria-live="polite"></div>
                 <p id="form-error" class="form-error" role="alert" hidden></p>
                 <button class="button primary submit-call" type="submit"><span data-icon="check"></span><span id="submit-label">Save call</span></button>
@@ -91,13 +108,18 @@
           </aside>
         </div>
 
+        <section id="callback-reminder-panel" class="panel callback-panel" aria-labelledby="callback-reminder-title" hidden>
+          <div class="panel-heading compact"><div><h2 id="callback-reminder-title" tabindex="-1">Callback reminders <span id="callback-reminder-count" class="heading-count"></span></h2><p>Pending callbacks across all dates. Times are local to this device.</p></div></div>
+          <ul id="callback-reminder-list" class="callback-list"></ul>
+        </section>
+
         <section class="panel recent-panel" aria-labelledby="recent-title"><div class="panel-heading compact"><div><h2 id="recent-title">Recent calls <span id="recent-count" class="heading-count"></span></h2><p>The latest conversations in your day.</p></div><button class="text-button" data-view="calls">View all calls <span data-icon="arrow-right"></span></button></div><div id="recent-calls"></div></section>
         <footer class="page-footer">Made for the space between calls.<span>Your progress, across devices</span></footer>
       </section>
 
-      <section id="view-calls" class="view" hidden><div class="panel"><div class="call-toolbar"><button class="text-button all-history-btn" data-action="all-history" aria-pressed="false">All dates</button><div class="filter-tabs" id="call-filters" aria-label="Filter calls"><button data-filter="all" class="active">All calls</button><button data-filter="saved">Saves</button><button data-filter="disconnected">Disconnects</button><button data-filter="mobile">Mobile sold</button></div><button class="button secondary export-button" data-action="export"><span data-icon="download"></span>Export CSV</button></div><div id="all-calls"></div><div class="table-footer" id="table-footer"></div><div class="pagination" id="pagination"></div></div></section>
+      <section id="view-calls" class="view" hidden><div class="panel"><div class="call-toolbar"><button class="text-button all-history-btn" data-action="all-history" aria-pressed="false">All dates</button><div class="filter-tabs" id="call-filters" aria-label="Filter calls"><button data-filter="all" class="active">All calls</button><button data-filter="saved">Saves</button><button data-filter="disconnected">Disconnects</button><button data-filter="downgrade">Downgrades</button><button data-filter="wash">Wash</button><button data-filter="mobile">Mobile sold</button></div><button class="button secondary export-button" data-action="export"><span data-icon="download"></span>Export CSV</button></div><div id="all-calls"></div><div class="table-footer" id="table-footer"></div><div class="pagination" id="pagination"></div></div></section>
 
-      <section id="view-goals" class="view" hidden><div class="goals-settings panel"><div class="panel-heading"><div><h2>Make the goals yours</h2><p>Set the targets used for every report date.</p></div><span class="autosave-badge" id="goal-save-status">Starting targets</span></div><div id="goal-settings"></div><div class="settings-footer"><p>Goals change the rings, never your call outcomes.</p></div></div><div class="method-note panel"><span data-icon="info"></span><div><h3>A clear picture of your numbers</h3><p>Service saves use customers who had that service. Play saves use the matching outcome pair, like DPS ÷ (DPS + DPD). Mobile sales track both orders and total mobiles sold, divided by all logged calls. Triple-play groups three or more services.</p><button class="text-button" data-action="help">See the calculation rules <span data-icon="arrow-right"></span></button></div></div><div class="settings-card panel"><h2>Records &amp; backups</h2><p>Your records and goals are saved to your account, so you can continue on another device. Download a backup whenever you want a separate copy of your records.</p><div class="backup-actions"><button class="button secondary" data-action="backup"><span data-icon="download"></span>Download full backup</button><button class="button secondary" data-action="import">Restore a backup</button></div><p id="backup-status" class="text-muted">Restore a backup to merge records into your account. Conflicting entries are not overwritten.</p></div></section>
+      <section id="view-goals" class="view" hidden><div class="goals-settings panel"><div class="panel-heading"><div><h2>Make the goals yours</h2><p>Set the targets used for every report date.</p></div><span class="autosave-badge" id="goal-save-status">Starting targets</span></div><div id="goal-settings"></div><div class="settings-footer"><p>Goals change the rings, never your call outcomes.</p></div></div></section>
     </main>
   </div>
 
