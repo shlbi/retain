@@ -57,4 +57,6 @@ Production history resides in Supabase. A browser refresh before submitting disc
 
 ## Operational notes
 
+History editing requires migration `20261113230000_edit_grouped_history.sql`. If the GitHub integration has not applied it, run the entire [enable-history-edit.sql](scripts/enable-history-edit.sql) file in the Supabase SQL Editor. The script installs the edit function once, records the matching migration version and returns `editing_ready = true`.
+
 The API uses expiring sessions, salted password hashes, rate limits and atomic per-user database operations. The app has no email password-reset or administrative interface. Manage database backups and trusted operator access in Supabase. Keep server keys out of the frontend and source control.
