@@ -36,6 +36,8 @@ Each report date has one row per combination of outcome and service tags. Identi
 | SPS · Internet kept | 11 accounts |
 | Mobile sold | 6 orders · 9 lines |
 
+Use **Edit** on a call-log row to correct that date’s grouped service outcomes, account counts and call or mobile totals. Changes update the daily stats in Supabase. An edit is rejected if the day has changed since the editor opened.
+
 The account counts and the sales counts use different units. For example, a call handling two accounts can increase two account counts, but still increases the daily call count by one. The grouped CSV includes the report date, outcome, service changes and counts in the chosen view.
 
 ## Accounts and storage

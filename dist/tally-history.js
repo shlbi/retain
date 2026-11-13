@@ -73,14 +73,14 @@ function rowTags(row) {
   return tags.join('');
 }
 
-export function groupedTable(rows, {showDate = false, empty = 'No saved outcomes for this date.'} = {}) {
+export function groupedTable(rows, {showDate = false, empty = 'No saved outcomes for this date.', editable = false} = {}) {
   if (!rows.length) return `<p class="tally-empty">${escapeHtml(empty)}</p>`;
   const body = rows.map(row => {
     const count = row.kind === 'mobile'
       ? `${countLabel(row.orders, 'order')} · ${countLabel(row.lines, 'line')}`
       : countLabel(row.count, 'account');
     const date = showDate ? `<td class="tally-date"><time datetime="${escapeHtml(row.day)}">${formatDay.format(new Date(row.day + 'T00:00:00Z'))}</time></td>` : '';
-    return `<tr>${date}<td><span class="outcome-tags">${rowTags(row)}</span></td><td class="tally-count">${count}</td></tr>`;
+    return `<tr>${date}<td><span class="outcome-tags">${rowTags(row)}</span></td><td class="tally-count">${count}${editable ? `<button class="tally-edit" data-action="edit-history" data-day="${row.day}" aria-label="Edit totals for ${row.day}">Edit</button>` : ''}</td></tr>`;
   }).join('');
   return `<table class="tally-table"><thead><tr>${showDate ? '<th scope="col">Date</th>' : ''}<th scope="col">Outcome tags</th><th scope="col" class="tally-count">Count</th></tr></thead><tbody>${body}</tbody></table>`;
 }

@@ -30,6 +30,7 @@ function fakeDatabase({user=USER_A,fail,allowed=true}={}) {
     if(name==='auth_rate_limit')return allowed;
     if(name==='auth_session')return user;
     if(name==='workspace_tally_state')return {version:4,days:[{day,...delta}],goals:{...DEFAULT_GOALS}};
+    if(name==='workspace_edit_day')return args.p_replacement;
     if(name==='workspace_tally')return {day:args.p_day,...args.p_delta};
     if(name==='workspace_goal')return args.p_value;
     if(name==='auth_register')return USER_A;
@@ -209,4 +210,18 @@ test('database adapter hides raw errors, maps conflicts, and supports the legacy
     const db=createDatabase({SUPABASE_URL:'https://database.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'legacy.jwt.key'},async()=>({ok:false,json:async()=>({message,code})}));
     await assert.rejects(db.rpc('workspace_tally_state'),error=>error.status===status&&!error.message.includes(message));
   }
+});
+
+test('history edits use session ownership and reject different report dates',async()=>{
+  const db=fakeDatabase();
+  const handler=createHandler({env:ENV,database:db});
+  const expected={day,...delta}, replacement={...expected,mobileLines:7};
+  const response=await request(handler,{cookie:session(),body:{action:'editDay',expected,replacement}});
+  assert.equal(response.status,200);
+  assert.deepEqual(response.body,replacement);
+  assert.equal(db.calls.find(call=>call.name==='workspace_edit_day').args.p_user_id,USER_A.id);
+  const invalid=await request(handler,{cookie:session(),body:{action:'editDay',expected,replacement:{...replacement,day:'2026-11-12'}}});
+  assert.equal(invalid.status,400);
+  const wrongUser=await request(handler,{cookie:session(),expected:USER_B.id,body:{action:'editDay',expected,replacement}});
+  assert.equal(wrongUser.status,401);
 });

@@ -22,3 +22,15 @@
   .tally-table .tally-count, .tally-table .tally-date { width: 24%; white-space: normal; }
   .tally-table .badge { font-size: 10px; }
 }
+
+.tally-edit { display: block; margin: 6px 0 0 auto; font-size: 12px; color: #2563a6; text-decoration: underline; padding: 5px; }
+.history-edit-totals { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 20px 0; }
+.history-edit-totals label, .history-edit-group > label { display: grid; gap: 6px; }
+#history-edit-form input[type="number"] { width: 100%; min-height: 40px; border: 1px solid #b7cae1; border-radius: 7px; padding: 8px; }
+.history-edit-group { border: 1px solid #dce6f4; border-radius: 10px; padding: 14px; display: grid; gap: 12px; margin: 12px 0; }
+.history-edit-group fieldset { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.history-edit-group legend { font-size: 12px; color: #526781; margin-bottom: 6px; }
+.history-edit-group label { font-size: 13px; }
+.history-edit-group small { color: #526781; }
+#history-edit-error { color: #a33226; }
+@media(max-width: 480px) { .history-edit-totals { grid-template-columns: 1fr; } }

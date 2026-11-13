@@ -4,7 +4,7 @@ import { validateDayTotals, validateTallyState, validateTallyUpdate } from '../d
 import { credentials, hashPassword, verifyPassword, tokenHash, newSession, sessionToken, sessionCookie, SESSION_SECONDS } from './auth.js';
 import { ApiError, createDatabase } from './database.js';
 
-const ACTION_FIELDS = {signup:['username','password'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value']};
+const ACTION_FIELDS = {signup:['username','password'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value'],editDay:['expected','replacement']};
 export const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const VALIDATION = message => new ApiError(400,'VALIDATION',message);
 
@@ -139,6 +139,13 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
             p_user_id:user.id,p_day:day,p_delta:delta,p_request_id:requestId
           }),validateDayTotals);
           if (result.day !== day) throw new ApiError(503,'STORAGE','Could not confirm the saved day.');
+          break;
+        }
+        case 'editDay': {
+          const expected = validateDayTotals(body.expected), replacement = validateDayTotals(body.replacement);
+          if (expected.day !== replacement.day) throw VALIDATION('Choose the same report date.');
+          result = safeResult(await db.rpc('workspace_edit_day',{p_user_id:user.id,p_expected:expected,p_replacement:replacement}),validateDayTotals);
+          if (result.day !== expected.day) throw new ApiError(503,'STORAGE','Could not confirm the edited day.');
           break;
         }
         case 'goal': {

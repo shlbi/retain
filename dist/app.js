@@ -3,6 +3,7 @@ import { tallyForCall, metricsForDay } from './tally.js';
 import { createTallyEntry } from './entry-tally.js';
 import { groupedRows, groupedTable, groupedCsv } from './tally-history.js';
 import { openStore, apiRequest, validDay } from './storage.js';
+import { historyEditor, readHistoryEditor, outcomeEditor } from './history-editor.js';
 import { signupRules } from './signup-rules.js';
 
 const paths = {
@@ -114,7 +115,7 @@ function renderCallLog() {
   const filtered = historyRows();
 
   const pages=Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));page=Math.min(page,pages-1);
-  $('all-calls').innerHTML=groupedTable(filtered.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE), {showDate:allHistory});
+  $('all-calls').innerHTML=groupedTable(filtered.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE), {showDate:allHistory,editable:true});
   $('table-footer').textContent=`${filtered.length} outcome group${filtered.length===1?'':'s'} · ${allHistory?'All dates':selectedDay}`;
   $('pagination').innerHTML=pages>1?`<button class="button secondary" data-action="previous-page" ${page===0?'disabled':''}>Previous</button><span>Page ${page+1} of ${pages}</span><button class="button secondary" data-action="next-page" ${page===pages-1?'disabled':''}>Next</button>`:'';
   document.querySelectorAll('[data-filter]').forEach(el=>{el.classList.toggle('active',el.dataset.filter===filter);el.setAttribute('aria-pressed',String(el.dataset.filter===filter));});
@@ -178,7 +179,7 @@ function showHelp() {
     <p>Overall save rate is the share of eligible calls that kept at least one original service on an unpaired account. Each call with an unpaired account enters the denominator once.</p></div>
     <div class="help-rule"><strong>Mobile orders and lines</strong><p>One order can contain 1–12 lines. Two orders with three lines each count as two orders and six lines. Both rates divide by all logged calls, including washes. Select Mobile under added services when the account also gains mobile service.</p></div>
     <div class="help-rule"><strong>Daily goals</strong><p>Reports use Eastern time. Each ring closes when its rate reaches your target. Remaining saves assume every next eligible account or call succeeds. Sales estimates assume one new order or line per next call.</p></div>
-    <div class="help-rule"><strong>Saved history</strong><p>Each submission updates your daily totals in Supabase. Accounts with the same outcome and service tags share a row. Mobile orders and lines have their own daily total. Refresh or sign in on another device to see confirmed saves.</p></div>
+    <div class="help-rule"><strong>Saved history</strong><p>Each submission updates your daily totals in Supabase. Accounts with the same outcome and service tags share a row. Mobile orders and lines have their own daily total. Refresh or sign in on another device to see confirmed saves. Use Edit in the call log to correct a past day’s grouped outcomes and totals.</p></div>
     <div class="dialog-actions"><button class="button primary" data-action="close-dialog">Done</button></div>`);
 }
 /** Show the numerator, denominator, and assumptions behind a circle. */
@@ -195,6 +196,48 @@ function exportCalls() {
   const rows = historyRows();
   download(new Blob([groupedCsv(rows)], {type:'text/csv;charset=utf-8;'}), `daily-tallies-${allHistory?'all-dates':selectedDay}.csv`);
   showToast('Grouped totals exported');
+}
+
+function openHistoryEditor(day) {
+  if (busy || !ready || !repo) return;
+  const snapshot = structuredClone(state.days.find(item => item.day === day));
+  if (!snapshot) return;
+  const source = repo, epoch = sessionEpoch;
+  showDialog('Edit saved outcomes', historyEditor(snapshot));
+  const form = $('history-edit-form');
+  form.querySelector('#add-history-group').addEventListener('click', () => {
+    const index = form.querySelectorAll('[data-edit-group]').length;
+    form.querySelector('#history-edit-groups').insertAdjacentHTML('beforeend',
+      outcomeEditor({before:[],kept:[],added:[],washed:false,count:1},index));
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (busy) return;
+    const errorBox = form.querySelector('#history-edit-error');
+    const controls = [...$('detail-dialog').querySelectorAll('button,input')];
+    try {
+      const replacement = readHistoryEditor(form,day);
+      pendingRead = null;
+      setBusy(true);
+      controls.forEach(control => { control.disabled = true; });
+      const result = await source.editDay(snapshot,replacement);
+      if (epoch !== sessionEpoch || source !== repo) return;
+      state.days = state.days.map(item => item.day === day ? result : item);
+      $('detail-dialog').close();
+      renderDashboard();
+      channel?.postMessage({userId:sessionUser.id});
+      showToast('Saved history updated');
+    } catch (error) {
+      if (epoch !== sessionEpoch || source !== repo) return;
+      errorBox.textContent = error.message || 'Could not save these changes. Try again.';
+      errorBox.hidden = false;
+    } finally {
+      if (epoch === sessionEpoch && source === repo) {
+        setBusy(false);
+        controls.forEach(control => { control.disabled = false; });
+      }
+    }
+  });
 }
 
 async function onClick(event) {
@@ -218,6 +261,7 @@ async function onClick(event) {
     case 'sign-out': await signOut(); break;
     case 'confirm-sign-out': await finishSignOut(); break;
     case 'toggle-password': setPasswordVisible($('password').type==='password'); break;
+    case 'edit-history': openHistoryEditor(button.dataset.day); break;
     case 'help': showHelp(); break;
     case 'close-dialog': $('detail-dialog').close(); break;
     case 'metric-goals': $('detail-dialog').close(); setView('goals'); break;
@@ -341,6 +385,9 @@ document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.datase
 document.addEventListener('click',event=>{onClick(event).catch(e=>storageError(e.message||'The action could not be completed.'));});
 document.addEventListener('keydown',onKeydown);
 
+$('detail-dialog').addEventListener('cancel', event => {
+  if (busy && $('history-edit-form')) event.preventDefault();
+});
 $('auth-form').addEventListener('submit',submitAuth);
 $('auth-form').addEventListener('input', ({target}) => {
   if (target.getAttribute('aria-invalid') === 'true') {
