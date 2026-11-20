@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { createHandler, readJson, MAX_REQUEST_BYTES } from '../server/workspace-handler.js';
-import { createDatabase, ApiError } from '../server/database.js';
-import { hashPassword, verifyPassword, newSession } from '../server/auth.js';
+import { createDatabase, ApiError, databaseError } from '../server/database.js';
+import { hashPassword, verifyPassword, newSession, tokenHash } from '../server/auth.js';
 import { DEFAULT_GOALS } from '../dist/model.js';
 
 const USER_A = {id:'11111111-1111-4111-8111-111111111111',username:'Agent A'};
@@ -28,6 +28,7 @@ function fakeDatabase({user=USER_A,fail,allowed=true}={}) {
   const calls=[];
   return {calls,async rpc(name,args){calls.push({name,args});if(fail?.[name])throw fail[name];
     if(name==='auth_rate_limit')return allowed;
+    if(name==='auth_create_verified_session')return true;
     if(name==='auth_session')return user;
     if(name==='workspace_tally_state')return {version:4,days:[{day,...delta}],goals:{...DEFAULT_GOALS}};
     if(name==='workspace_edit_day')return args.p_replacement;
@@ -87,7 +88,7 @@ test('signup accepts a one-character password and requests approval without a se
   assert.equal(register.args.p_username,'One');assert.equal(register.args.p_requested_role,'agent');
   assert.ok(await verifyPassword('x',register.args.p_password_hash));
   assert.equal(response.headers['set-cookie'],undefined);
-  assert.ok(!db.calls.some(call=>['auth_create_session','auth_register'].includes(call.name)));
+  assert.ok(!db.calls.some(call=>['auth_create_session','auth_create_verified_session','auth_register'].includes(call.name)));
 });
 
 test('registration enforces credential rules before writing to the database', async () => {
@@ -125,7 +126,8 @@ test('successful login rotates the previous cookie session without exposing hash
   const db=fakeDatabase(),rpc=db.rpc.bind(db);db.rpc=async(name,args)=>name==='auth_get_user'?stored:rpc(name,args);
   const response=await request(createHandler({env:ENV,database:db}),{body:{action:'login',username:'Agent A',password:' '},cookie:session()});
   assert.equal(response.status,200);assert.deepEqual(response.body,{user:USER_A});
-  assert.deepEqual(db.calls.filter(call=>['auth_create_session','auth_logout'].includes(call.name)).map(call=>call.name),['auth_create_session','auth_logout']);
+  assert.deepEqual(db.calls.filter(call=>['auth_create_verified_session','auth_logout'].includes(call.name)).map(call=>call.name),['auth_create_verified_session','auth_logout']);
+  assert.equal(db.calls.find(call=>call.name==='auth_create_verified_session').args.p_expected_hash,stored.password_hash);
   assert.match(response.headers['set-cookie'],/workspace_session=[A-Za-z0-9_-]{43};/);
   assert.match(response.headers['set-cookie'],/HttpOnly; SameSite=Strict;.*Secure/);
   assert.doesNotMatch(JSON.stringify(response.body),/scrypt|password_hash/);
@@ -138,6 +140,114 @@ test('only explicit development permits an HTTP cookie on a non-loopback preview
     const response=await request(handler,{body:{action:'logout'},headers:{host:'terminal.local:4173',origin}});
     assert.equal(response.status,200);assert.equal(response.headers['set-cookie'].includes('; Secure'),secure);
   }
+});
+
+test('only a precisely identified pre-reset schema allows the legacy session RPC',async()=>{
+  const stored={...USER_A,status:'active',password_hash:await hashPassword('x')};
+  const missing={code:'PGRST202',message:'Could not find the function public.auth_create_verified_session(p_expected_hash, p_expires_at, p_token_hash, p_user_id) in the schema cache'};
+  for (const [outcome,expectedStatus,useLegacy] of [
+    [missing,200,true],[false,401,false],[null,503,false],
+    [{...missing,code:'42501'},503,false],[{...missing,message:'Another function is missing'},503,false],
+    [{code:'P0001',message:'FORBIDDEN: details'},403,false],[new Error('timeout'),503,false]
+  ]) {
+    const db=fakeDatabase(),rpc=db.rpc.bind(db),legacy=[];
+    db.rpc=(name,args)=>{
+      if (name==='auth_get_user') return stored;
+      if (name==='auth_create_verified_session') {
+        if (outcome instanceof Error) throw outcome;
+        if (outcome?.code) throw databaseError(outcome,name);
+        return outcome;
+      }
+      if (name==='auth_create_session') {legacy.push(args);return {ok:true};}
+      return rpc(name,args);
+    };
+    const response=await request(createHandler({env:ENV,database:db}),{body:{action:'login',username:USER_A.username,password:'x'}});
+    assert.equal(response.status,expectedStatus);
+    assert.equal(legacy.length,useLegacy ? 1 : 0);
+    assert.equal(Boolean(response.headers['set-cookie']),useLegacy);
+    if (useLegacy) assert.deepEqual(Object.keys(legacy[0]).sort(),['p_expires_at','p_token_hash','p_user_id']);
+  }
+});
+
+test('password change requests and completions are same-origin, rate limited and anonymous',async()=>{
+  const username='Previous Agent',body={action:'requestPasswordChange',username};
+  const db=fakeDatabase(),rpc=db.rpc.bind(db),calls=[];
+  db.rpc=(name,args)=>{
+    calls.push({name,args});
+    if (name==='auth_request_password_change') return {ok:true,found:args.p_username===username};
+    return rpc(name,args);
+  };
+  const handler=createHandler({env:ENV,database:db});
+  for (const value of [username,'Missing','Pending']) {
+    const before=calls.length;
+    const response=await request(handler,{body:{...body,username:value}});
+    assert.equal(response.status,200);
+    assert.deepEqual(response.body,{ok:true});
+    assert.equal(response.headers['set-cookie'],undefined);
+    assert.deepEqual(calls.slice(before).map(call=>call.name),['auth_rate_limit','auth_rate_limit','auth_request_password_change']);
+    assert.doesNotMatch(calls[before+1].args.p_key,/Previous|Missing|Pending/);
+  }
+  const complete={action:'completePasswordChange',username,code:'a'.repeat(32),password:'x'};
+  const stopped=fakeDatabase({allowed:false});
+  const limited=createHandler({env:ENV,database:stopped});
+  for (const data of [body,complete]) {
+    assert.equal((await request(limited,{body:data,headers:{origin:'https://unrelated.example'}})).status,400);
+    assert.equal((await request(limited,{body:data})).status,429);
+  }
+  assert.deepEqual(stopped.calls.map(c=>c.name),['auth_rate_limit','auth_rate_limit']);
+  const count=calls.length;
+  for (const data of [{...body,username:'a'.repeat(65)},{...body,password:'x'},
+    {...complete,password:'🔐'.repeat(9)},{...complete,password:''},{...complete,code:'short'}]) {
+    assert.equal((await request(handler,{body:data})).status,400);
+  }
+  assert.ok(!calls.slice(count).some(call=>call.name.includes('password_change')));
+});
+
+test('admin approval returns a one-time displayed code and only digests reach storage',async()=>{
+  const cookie=session(),username='1 Legacy User',calls=[];
+  const db=fakeDatabase(), rpc=db.rpc.bind(db),pending={id:requestId,username,requestedAt:'2026-11-22T12:00:00Z'};
+  db.rpc=(name,args)=>{
+    calls.push({name,args});
+    if (name==='workspace_admin_accounts') return {accounts:[],pending:[],teams:[],passwordChanges:[{...pending,token_hash:'secret'}]};
+    if (name==='workspace_admin_review_password_change' || name==='auth_complete_password_change') return {ok:true,token_hash:'secret'};
+    return rpc(name,args);
+  };
+  const handler=createHandler({env:ENV,database:db});
+  const directory=await request(handler,{method:'GET',url:'/api/workspace?action=adminAccounts',cookie});
+  assert.deepEqual(directory.body.passwordChanges,[pending]);
+  const review={action:'adminReviewPasswordChange',requestId,decision:'approve'};
+  assert.equal((await request(handler,{body:review})).status,401);
+  for (const patch of [{requestId:'bad'},{decision:'open'},{code:'client-supplied'},{userId:USER_A.id}]) {
+    assert.equal((await request(handler,{cookie,body:{...review,...patch}})).status,400);
+  }
+  const approved=await request(handler,{cookie,body:review});
+  assert.equal(approved.headers['cache-control'],'no-store');
+  const code=approved.body.code;
+  assert.match(code,/^[0-9a-f]{32}$/);
+  assert.deepEqual(approved.body,{ok:true,code});
+  assert.deepEqual(calls.find(c=>c.name==='workspace_admin_review_password_change').args,
+    {p_user_id:USER_A.id,p_request_id:requestId,p_decision:'approve',p_token_hash:tokenHash(code)});
+  const denied=await request(handler,{cookie,body:{...review,decision:'deny'}});
+  assert.deepEqual(denied.body,{ok:true});
+  assert.equal(calls.filter(c=>c.name==='workspace_admin_review_password_change').at(-1).args.p_token_hash,null);
+  const password='🔐'.repeat(8);
+  const completed=await request(handler,{body:{action:'completePasswordChange',username,password,code:' '+code.toUpperCase()+' '}});
+  assert.equal(completed.status,200);
+  assert.deepEqual(completed.body,{ok:true});
+  assert.equal(completed.headers['set-cookie'],undefined);
+  const saved=calls.find(c=>c.name==='auth_complete_password_change').args;
+  assert.equal(saved.p_username,username);
+  assert.equal(saved.p_token_hash,tokenHash(code));
+  assert.ok(await verifyPassword(password,saved.p_password_hash));
+  assert.ok(!JSON.stringify(calls).includes(code));
+  assert.ok(!JSON.stringify(calls).includes(password));
+  const fail=databaseError({code:'P0001',message:'INVALID_RESET: internal state'},'auth_complete_password_change');
+  const failures=createHandler({env:ENV,database:fakeDatabase({fail:{auth_complete_password_change:fail}})});
+  const input={action:'completePasswordChange',username,password};
+  const wrong=await request(failures,{body:{...input,code}});
+  const malformed=await request(failures,{body:{...input,code:'wrong'}});
+  assert.deepEqual(wrong.body,malformed.body);
+  assert.equal(wrong.status,400);
 });
 
 test('database-backed rate limit stops hashing/account lookups and returns retry guidance',async()=>{
@@ -216,7 +326,7 @@ test('an older directory still serves Accounts and reports that Teams needs its 
   const handler=createHandler({env:ENV,database:db});
   const response=await request(handler,{method:'GET',url:'/api/workspace?action=adminAccounts',cookie:session()});
   assert.equal(response.status,200);
-  assert.deepEqual(response.body,{accounts:[],pending:[],teams:null});
+  assert.deepEqual(response.body,{accounts:[],pending:[],teams:null,passwordChanges:[]});
 
   const missing=createDatabase({SUPABASE_URL:'https://database.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_example'},
     async()=>({ok:false,json:async()=>({code:'PGRST202',message:'private schema cache details'})}));
@@ -278,7 +388,7 @@ test('pending credentials disclose status only on a password match and cannot cr
   assert.equal(pending.status,403);assert.equal(pending.body.error.code,'PENDING_APPROVAL');
   stored.status='unknown';
   assert.equal((await login('x')).status,503);
-  assert.ok(!db.calls.some(c=>c.name==='auth_create_session'));
+  assert.ok(!db.calls.some(c=>['auth_create_session','auth_create_verified_session'].includes(c.name)));
   assert.equal(pending.headers['set-cookie'],undefined);
 });
 
@@ -299,7 +409,7 @@ test('admin management verifies actor and projection, binds writes and never ret
   const handler=createHandler({env:ENV,database:db});
   const directory={method:'GET',url:'/api/workspace?action=adminAccounts'};
   assert.equal((await request(handler,directory)).status,401);
-  assert.deepEqual((await request(handler,{...directory,cookie})).body,{accounts:[managed],pending:[pending],teams:[team]});
+  assert.deepEqual((await request(handler,{...directory,cookie})).body,{accounts:[managed],pending:[pending],teams:[team],passwordChanges:[]});
   const assign={action:'adminAssignAccount',accountId:managed.id,role:'supervisor',supervisorId:null,expectedRole:'agent',expectedSupervisorId:null};
   assert.equal((await request(handler,{cookie,body:{...assign,expectedRole:undefined}})).status,400);
   assert.equal((await request(handler,{cookie,body:{...assign,supervisorId:USER_A.id}})).status,400);
@@ -448,7 +558,7 @@ test('the directory publishes stable team identifiers and ownership for account 
     ? {accounts:[{...owner,password_hash:'secret'}],teams:[{...team,internal_detail:'private'}],pending:[]}
     : rpc(name,args);
   const actual=await request(createHandler({env:ENV,database:db}),{method:'GET',url:'/api/workspace?action=adminAccounts',cookie:session()});
-  assert.deepEqual(actual.body,{accounts:[owner],teams:[team],pending:[]});
+  assert.deepEqual(actual.body,{accounts:[owner],teams:[team],pending:[],passwordChanges:[]});
 });
 
 test('deletion binds verified identity, complete snapshots, and database confirmation',async()=>{

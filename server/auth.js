@@ -19,7 +19,7 @@ export const SESSION_SECONDS = 30 * 24 * 60 * 60;
 // A nonexistent account still incurs the same scrypt work and constant-time comparison.
 const DUMMY_HASH = `${CURRENT_PREFIX}${Buffer.alloc(16, 0x59).toString('hex')}$${Buffer.alloc(KEY_BYTES, 0xa7).toString('hex')}`;
 
-// Shared by login, signup and admin creation. Bound both native memory in use
+// Shared by sign-in, account creation and password changes. Bound both native memory in use
 // and the number of queued jobs on each server instance under a burst of traffic.
 async function deriveKey(password, salt, parallelism) {
   if (deriving < MAX_DERIVATIONS) deriving++;
@@ -36,17 +36,23 @@ async function deriveKey(password, salt, parallelism) {
   }
 }
 
-/** Existing accounts keep the credential limits active when they registered. */
+/** Existing usernames retain the limits active when the account was created. */
+export function existingUsername(value) {
+  const name = typeof value === 'string' ? value.trim() : '';
+  if (!name || name.length > 128 || Array.from(name).length > 64) throw new Error('Username must contain 1–64 characters.');
+  return name;
+}
+
 export function credentials(username, password, action = 'login') {
   if (action === 'signup') {
     const errors = signupRules(username, password);
     if (errors.username || errors.password) throw new Error(errors.username || errors.password);
   } else {
-    const name = typeof username === 'string' ? username.trim() : '';
-    // UTF-16 uses at most two code units per character. Avoid allocating huge
-    // code-point arrays for a request that's already beyond the legacy limit.
-    if (!name || name.length > 128 || Array.from(name).length > 64) throw new Error('Username must contain 1–64 characters.');
-    if (typeof password !== 'string' || password.length < 1 || password.length > 2048 || Array.from(password).length > 1024) throw new Error('Password must contain 1–1024 characters.');
+    username = existingUsername(username);
+    if (action === 'completePasswordChange') {
+      const error = signupRules(username,password).password;
+      if (error) throw new Error(error);
+    } else if (typeof password !== 'string' || password.length < 1 || password.length > 2048 || Array.from(password).length > 1024) throw new Error('Password must contain 1–1024 characters.');
   }
   return { username:username.trim(), password };
 }
@@ -78,6 +84,7 @@ export async function verifyPassword(password, storedHash) {
 /** Only a token digest is persisted; the 256-bit bearer token remains in the cookie. */
 export function tokenHash(token) { return createHash('sha256').update(token).digest('hex'); }
 export function newSession() { const token = randomBytes(32).toString('base64url'); return { token, hash:tokenHash(token) }; }
+export function newPasswordChangeCode() { return randomBytes(16).toString('hex'); }
 
 /** Ignore malformed or ambiguous duplicate cookies rather than guessing an identity. */
 export function sessionToken(cookieHeader) {

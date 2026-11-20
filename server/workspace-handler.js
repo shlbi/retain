@@ -1,9 +1,9 @@
 import { DEFAULT_GOALS } from '../dist/model.js';
 import { StorageError } from '../dist/validation.js';
 import { validateDayTotals, validateTallyState, validateTallyUpdate } from '../dist/tally-validation.js';
-import { credentials, hashPassword, needsPasswordUpgrade, verifyPassword, tokenHash, newSession, sessionToken, sessionCookie, SESSION_SECONDS } from './auth.js';
+import { credentials, existingUsername, hashPassword, needsPasswordUpgrade, verifyPassword, tokenHash, newPasswordChangeCode, newSession, sessionToken, sessionCookie, SESSION_SECONDS } from './auth.js';
 import { gameConnection } from './game-connection.js';
-import { ApiError, createDatabase } from './database.js';
+import { ApiError, createDatabase, invalidReset } from './database.js';
 
 const ACTION_FIELDS = {signup:['username','password','requestedRole'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value'],editDay:['expected','replacement'],
   adminCreateAccount:['username','password','role','supervisorId'],adminReviewSignup:['requestId','decision','role','supervisorId'],
@@ -12,6 +12,7 @@ const ACTION_FIELDS = {signup:['username','password','requestedRole'],login:['us
   adminSaveTeamDetails:['originalSupervisorId','supervisorId','name','expectedName','expectedMemberIds','members'],
   adminDeleteTeam:['supervisorId','expectedTeamId','expectedName','expectedMemberIds'],
   adminDeleteAccount:['accountId','expectedUsername','expectedRole','expectedSupervisorId','expectedTeamId','expectedTeamName','expectedMemberIds'],
+  requestPasswordChange:['username'],completePasswordChange:['username','code','password'],adminReviewPasswordChange:['requestId','decision'],
   agentState:['agentId'],teamGoals:['agentIds','goals'],gameSchedule:['title','incentive','startsAt','endsAt','pattern','squares']};
 const READ_ACTIONS = {
   state:'workspace_tally_state', teamContext:'workspace_team_context',
@@ -109,19 +110,35 @@ async function authenticatedAccount(db, account) {
 
   // Rehashing is opportunistic. The existing verified credential continues to work
   // if the migration has not finished rolling out or the server is at KDF capacity.
-  let upgraded;
+  let upgraded, newHash;
   try {
+    newHash = await hashPassword(account.password);
     upgraded = await db.rpc('auth_upgrade_password_hash',{
       p_identity_id:stored.id,p_status:stored.status,p_expected_hash:stored.password_hash,
-      p_new_hash:await hashPassword(account.password)
+      p_new_hash:newHash
     });
   } catch (error) {
     if (!(error instanceof ApiError) || !['STORAGE','AUTH_BUSY'].includes(error.code)) throw error;
     return stored;
   }
   // A concurrent login, approval or denial may have changed this identity.
-  if (upgraded === false) return authenticate(await lookup());
-  return stored;
+  if (upgraded !== true) return authenticate(await lookup());
+  return {...stored,password_hash:newHash};
+}
+
+async function createVerifiedSession(db, stored, tokenDigest, expiresAt) {
+  const session = {p_user_id:stored.id,p_token_hash:tokenDigest,p_expires_at:expiresAt};
+  let issued;
+  try {
+    issued = await db.rpc('auth_create_verified_session',{...session,p_expected_hash:stored.password_hash});
+  } catch (error) {
+    // During rollout, only an explicitly missing RPC identifies the pre-reset schema.
+    // The reset migration retires the legacy function in the same transaction.
+    if (!(error instanceof ApiError) || error.code !== 'VERIFIED_SESSION_UNAVAILABLE') throw error;
+    issued = (await db.rpc('auth_create_session',session))?.ok;
+  }
+  if (issued === false) throw new ApiError(401,'AUTH','Username or password is incorrect.');
+  if (issued !== true) throw new ApiError(503,'STORAGE','Could not confirm sign-in. Try again.');
 }
 function validateAssignment(role, supervisorId, roles = accountRoles) {
   if (!roles.includes(role)) throw VALIDATION('Choose a valid account role.');
@@ -168,6 +185,7 @@ function validatePriorTeam(originalSupervisorId, expectedName, expectedMemberIds
 function accountDirectory(value) {
   return {
     pending:value.pending.map(({id,username,requestedRole,requestedAt}) => ({id,username,requestedRole,requestedAt})),
+    passwordChanges:(value.passwordChanges ?? []).map(({id,username,requestedAt}) => ({id,username,requestedAt})),
     accounts:value.accounts.map(({id,username,role,supervisorId,ownedTeamId,ownedTeamName}) => ({id,username,role,supervisorId,ownedTeamId,ownedTeamName})),
     // Accounts remain usable on the previous schema. Teams needs to distinguish
     // an unavailable directory from a successfully loaded, empty roster.
@@ -207,6 +225,25 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
       let body;
       if (req.method === 'POST') { guardMutation(req,env); body = await readJson(req); }
       const db = database || createDatabase(env,fetchImpl);
+      if (req.method === 'POST' && body.action === 'requestPasswordChange') {
+        let username;
+        try { username = existingUsername(body.username); } catch (error) { throw VALIDATION(error.message); }
+        await authRateLimit(db,req,env,body.action,username);
+        const result = await db.rpc('auth_request_password_change',{p_username:username});
+        if (result?.ok !== true) throw new ApiError(503,'STORAGE','Could not confirm the password change request. Try again.');
+        return send(200,{ok:true});
+      }
+      if (req.method === 'POST' && body.action === 'completePasswordChange') {
+        const {username,password} = validatedCredentials(body,body.action);
+        await authRateLimit(db,req,env,body.action,username);
+        const code = typeof body.code === 'string' ? body.code.trim().toLowerCase() : '';
+        if (!/^[0-9a-f]{32}$/.test(code)) throw invalidReset();
+        const result = await db.rpc('auth_complete_password_change',{
+          p_username:username,p_token_hash:tokenHash(code),p_password_hash:await hashPassword(password)
+        });
+        if (result?.ok !== true) throw new ApiError(503,'STORAGE','Could not confirm the password change. Try signing in again.');
+        return send(200,{ok:true});
+      }
       if (req.method === 'POST' && ['signup','login'].includes(body.action)) {
         const account = validatedCredentials(body,body.action);
         const requestedRole = body.requestedRole === undefined ? 'agent' : body.requestedRole;
@@ -221,7 +258,8 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
         const user = publicUser(stored);
         if (stored.status === 'pending') throw new ApiError(403,'PENDING_APPROVAL','Your request is waiting for admin approval.');
         const session = newSession(), now = clock();
-        await db.rpc('auth_create_session',{p_user_id:user.id,p_token_hash:session.hash,p_expires_at:new Date(now + SESSION_SECONDS * 1000).toISOString()});
+        // The database checks the verified hash under a row lock before issuing the session.
+        await createVerifiedSession(db,stored,session.hash,new Date(now + SESSION_SECONDS * 1000).toISOString());
         const previous = sessionToken(header(req,'cookie'));
         if (previous) await db.rpc('auth_logout',{p_token_hash:tokenHash(previous)});
         res.setHeader('Set-Cookie',sessionCookie(session.token,{secure:secureRequest(req,env),now}));
@@ -251,6 +289,16 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
       }
       let result;
       switch (body.action) {
+        case 'adminReviewPasswordChange': {
+          const {requestId,decision} = body;
+          if (!isUuid(requestId) || !['approve','deny'].includes(decision)) throw VALIDATION('Choose a pending password change and a decision.');
+          const code = decision === 'approve' ? newPasswordChangeCode() : null;
+          const reviewed = await db.rpc('workspace_admin_review_password_change',{
+            p_user_id:user.id,p_request_id:requestId,p_decision:decision,p_token_hash:code && tokenHash(code)
+          });
+          if (reviewed?.ok !== true) throw new ApiError(503,'STORAGE','Could not confirm this review. Refresh the request list.');
+          return send(200,code ? {ok:true,code} : {ok:true});
+        }
         case 'adminSaveTeam': {
           const {supervisorId,name,expectedName} = body;
           if (!isUuid(supervisorId)) throw VALIDATION('Choose the team supervisor.');

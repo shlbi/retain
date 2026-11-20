@@ -2,10 +2,22 @@
 export class ApiError extends Error {
   constructor(status, code, message) { super(message); this.name = 'ApiError'; this.status = status; this.code = code; }
 }
+export const invalidReset = () => new ApiError(400,'INVALID_RESET','The username or approval code is incorrect, or the code has expired.');
 
 /** Map only explicit domain error categories; hide Postgres diagnostics from clients. */
 export function databaseError(error, rpcName) {
   const category = typeof error?.message === 'string' ? error.message.split(':',1)[0] : '';
+  if (rpcName === 'auth_create_verified_session' && error?.code === 'PGRST202' &&
+      /^Could not find the function public\.auth_create_verified_session\(/.test(error.message)) {
+    return new ApiError(503,'VERIFIED_SESSION_UNAVAILABLE','The database session update is unavailable.');
+  }
+  if (rpcName === 'auth_complete_password_change' || rpcName === 'auth_request_password_change') {
+    if (rpcName === 'auth_complete_password_change' && category === 'INVALID_RESET') return invalidReset();
+    return new ApiError(503,'STORAGE','Password changes are temporarily unavailable. Try again.');
+  }
+  if (rpcName === 'workspace_admin_review_password_change' && category === 'CONFLICT') {
+    return new ApiError(409,'CONFLICT','This password change request has already been reviewed or expired. Refresh the request list.');
+  }
   if (rpcName === 'workspace_admin_delete_team' || rpcName === 'workspace_admin_delete_account') {
     const subject = rpcName === 'workspace_admin_delete_team' ? 'team' : 'account';
     if (error?.code === 'PGRST202') return new ApiError(503,'SETUP','Apply the account and team deletion database update in Supabase, then refresh the admin page.');

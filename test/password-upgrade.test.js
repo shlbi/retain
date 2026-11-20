@@ -4,6 +4,7 @@ import { scryptSync } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { createHandler } from '../server/workspace-handler.js';
+import { databaseError } from '../server/database.js';
 import { hashPassword, needsPasswordUpgrade, verifyPassword } from '../server/auth.js';
 
 let db, oldHash, handler;
@@ -13,7 +14,8 @@ const sql = {
   auth_rate_limit:'select public.auth_rate_limit($1,$2,$3) as result',
   auth_get_user:'select public.auth_get_user($1) as result',
   auth_upgrade_password_hash:'select public.auth_upgrade_password_hash($1,$2,$3,$4) as result',
-  auth_create_session:'select public.auth_create_session($1,$2,$3) as result'
+  auth_create_session:'select public.auth_create_session($1,$2,$3) as result',
+  auth_create_verified_session:'select public.auth_create_verified_session(p_user_id => $1,p_token_hash => $2,p_expires_at => $3,p_expected_hash => $4) as result'
 };
 const login = async (name,password) => {
   const req={method:'POST',url:'/api/workspace',body:{action:'login',username:name,password},
@@ -37,7 +39,15 @@ before(async () => {
   await db.query("select public.auth_request_signup('NewAgent',$1,'agent')",[oldHash]);
   handler=createHandler({env:{NODE_ENV:'development'},database:{async rpc(name,args) {
     assert.ok(Object.hasOwn(sql,name));
-    return (await db.query(sql[name],Object.values(args))).rows[0].result;
+    try {
+      return (await db.query(sql[name],Object.values(args))).rows[0].result;
+    } catch (error) {
+      // PostgREST identifies a missing function with PGRST202 during the server-first rollout.
+      if (name==='auth_create_verified_session' && error.code==='42883') {
+        throw databaseError({code:'PGRST202',message:'Could not find the function public.auth_create_verified_session(...) in the schema cache'},name);
+      }
+      throw error;
+    }
   }}});
 });
 after(async()=>{await db?.close();});
