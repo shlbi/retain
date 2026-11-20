@@ -29,13 +29,18 @@
         <p id="credential-notice" class="credential-notice"><span data-icon="lock" aria-hidden="true"></span>you can not use your spectrum credentials</p>
         <form id="auth-form" class="auth-form" aria-describedby="credential-notice">
           <p id="signup-confirmation" class="auth-confirmation" role="status" hidden></p>
-          <div class="auth-field">
+          <div class="auth-field" id="auth-username-field">
             <label for="username">Username</label>
             <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
             <p id="username-rule" class="auth-rule" hidden>Up to 8 characters. The first character cannot be a number or the letter P.</p>
           </div>
-          <div class="auth-field">
-            <label for="password">Password</label>
+          <div class="auth-field" id="auth-code-field" hidden>
+            <label for="reset-code">Reset code</label>
+            <input id="reset-code" name="code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" aria-describedby="reset-code-rule" disabled>
+            <p class="auth-rule" id="reset-code-rule">Paste the code your admin shared. It expires 30 minutes after approval.</p>
+          </div>
+          <div class="auth-field" id="auth-password-field">
+            <label for="password" id="auth-password-label">Password</label>
             <div class="password-field">
               <input id="password" name="password" type="password" autocomplete="current-password" required>
               <button class="password-toggle" type="button" data-action="toggle-password" aria-label="Show password" aria-controls="password" aria-pressed="false">
@@ -52,7 +57,9 @@
           <p id="auth-error" class="auth-error" role="alert" hidden></p>
           <button id="auth-submit" class="auth-submit" type="submit">Sign in</button>
         </form>
+        <button type="button" id="auth-enter-code" class="auth-recovery-link" hidden>I have a reset code</button>
         <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">Request an account</button>
+        <button type="button" id="auth-request-password" class="auth-recovery-link">Request password change</button>
         <p id="auth-status" class="auth-status" role="status">Checking session…</p>
         <noscript><p class="auth-error">Enable JavaScript to sign in and use your workspace.</p></noscript>
       </section>
@@ -216,8 +223,13 @@
           <p id="accounts-error" class="team-error" role="alert"></p>
           <div class="accounts-layout">
             <section class="panel account-card account-requests" aria-labelledby="requests-title">
-              <div class="account-card-heading"><h2 id="requests-title">Sign-up requests <span id="request-count" class="account-count" hidden></span></h2><button type="button" id="accounts-refresh" class="text-button">Refresh</button></div>
+              <div class="account-card-heading"><h2 id="requests-title">Requests <span id="request-count" class="account-count" hidden></span></h2><button type="button" id="accounts-refresh" class="text-button">Refresh</button></div>
+              <div class="request-filters">
+                <label>Find a request<input id="request-search" type="search" placeholder="Search username" autocomplete="off" autocapitalize="none" spellcheck="false" aria-controls="signup-requests"></label>
+                <label>Request type<select id="request-type" aria-controls="signup-requests"><option value="all">All</option><option value="signup">Sign-up</option><option value="password">Password change</option></select></label>
+              </div>
               <div id="signup-requests"></div>
+              <p id="requests-empty" class="accounts-empty" role="status"></p>
             </section>
             <section class="panel account-card" aria-labelledby="create-account-title">
               <h2 id="create-account-title">Create account</h2>
@@ -240,6 +252,16 @@
               <div class="directory-pages" id="directory-pages" hidden><button type="button" class="button secondary" id="directory-prev">Previous</button><span id="directory-page"></span><button type="button" class="button secondary" id="directory-next">Next</button></div>
             </section>
           </div>
+          <dialog id="password-code-dialog" aria-labelledby="password-code-title" aria-describedby="password-code-guide">
+            <div class="dialog-heading"><h2 id="password-code-title">Password change approved</h2></div>
+            <div class="dialog-body password-code-body">
+              <p id="password-code-guide"></p>
+              <label>One-time code<input id="password-code-value" type="text" readonly autocomplete="off" spellcheck="false" autocapitalize="none"></label>
+              <p class="account-hint">The code expires in 30 minutes. If it’s lost, the account holder can request a new password change.</p>
+              <p id="password-code-feedback" role="status"></p>
+              <div class="dialog-actions"><button type="button" id="password-code-dismiss" class="button secondary">Dismiss</button><button type="button" id="password-code-copy" class="button primary">Copy code</button></div>
+            </div>
+          </dialog>
           <dialog id="account-dialog" aria-labelledby="account-dialog-title">
             <div class="dialog-heading"><h2 id="account-dialog-title">Edit account</h2><button type="button" id="account-dialog-close" class="icon-button" aria-label="Close"><span data-icon="close"></span></button></div>
             <form id="account-dialog-form" class="account-form dialog-body">

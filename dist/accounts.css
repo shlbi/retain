@@ -16,8 +16,8 @@
 .account-form>fieldset, .account-role-field, .request-row, .signup-role {border:0;padding:0;margin:0;min-width:0}
 .account-card .account-form {margin-top:20px}
 .account-form>fieldset, #account-edit-fields {display:grid;gap:15px}
-.account-form label, .request-selects label, .directory-search {display:grid;gap:6px;font-size:14px;font-weight:600;color:#344e69}
-.account-form :is(input:not([type=radio]),select), .request-row select, .directory-search input {
+.account-form label, .request-selects label, .directory-search, .request-filters label, .password-code-body label {display:grid;gap:6px;font-size:14px;font-weight:600;color:#344e69}
+.account-form :is(input:not([type=radio]),select), .request-row select, .directory-search input, .request-filters :is(input,select), #password-code-value {
   font:400 14px/1.4 var(--font);color:#233d59;background:#fff;border:1px solid #cbd8e9;border-radius:7px;width:100%;min-width:0;min-height:40px;padding:8px 10px
 }
 .account-form select,.request-row select {text-overflow:ellipsis}
@@ -42,6 +42,18 @@
 .request-form:nth-child(even) .account-avatar, .account-directory-row:nth-child(even) .account-avatar {background:#ececfb;color:#555a98}
 .account-name {min-width:0;display:grid;gap:3px;font-size:15px;overflow-wrap:anywhere}
 .account-name small,.account-team {font-size:13px;line-height:1.4;color:#5f7289}
+.request-filters {display:grid;grid-template-columns:minmax(0,1.5fr) minmax(8.5rem,1fr);gap:12px;margin-top:18px}
+.request-type-tag {justify-self:start;border-radius:5px;padding:2px 6px;background:#e7f0fb;color:#264f80;font-size:12px;font-weight:600;line-height:1.4}
+.request-form[data-type=password] .request-type-tag {background:#eeebfa;color:#594482}
+.request-form[data-type=password] .request-row {grid-template-columns:minmax(0,1fr) auto}
+#requests-empty:empty,#password-code-feedback:empty {margin:0}
+#password-code-dialog {max-width:420px}
+#password-code-title {font-size:20px;margin:0}
+.password-code-body {display:grid;gap:12px}
+.password-code-body p {margin:0;color:#405872;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.password-code-body .dialog-actions {margin:4px 0 0}
+#password-code-value {font:600 16px/1.5 ui-monospace,monospace;color:#204c79;background:#f1f6fc}
+#password-code-feedback {color:#255b8c}
 .request-form {margin-top:12px;border-top:1px solid #e2eaf3}
 .request-row {display:grid;grid-template-columns:minmax(85px,1fr) minmax(160px,1.7fr) auto;align-items:center;gap:10px;padding-top:15px}
 .request-selects,.request-actions {display:flex;gap:8px;align-items:end;flex-wrap:wrap}
@@ -64,11 +76,14 @@
 @container account-card (max-width:380px) {
   .request-row {grid-template-columns:minmax(0,1fr)}
   .request-actions {grid-row:3;justify-content:start}
+  .request-form[data-type=password] .request-row {grid-template-columns:minmax(0,1fr)}
+  .request-form[data-type=password] .request-actions {grid-row:auto}
   .account-directory-row {grid-template-columns:minmax(0,1fr) auto;gap:5px 10px}
   .account-directory-row .account-role,.account-directory-row .account-team {grid-column:1;padding-left:43px}
   .account-directory-row .button {grid-column:2;grid-row:1/4}
 }
-@media(max-width:760px) {.account-form :is(input:not([type=radio]),select),.request-row select,.directory-search input {font-size:16px}}
+@container account-card (max-width:300px) {.request-filters {grid-template-columns:minmax(0,1fr)}}
+@media(max-width:760px) {.account-form :is(input:not([type=radio]),select),.request-row select,.directory-search input,.request-filters :is(input,select) {font-size:16px}}
 
 .teams-card .account-card-heading {flex-wrap:nowrap}
 .team-error {margin:0;padding:10px 12px;border-inline-start:3px solid #bf2538;border-radius:4px;background:#fff0f1;color:#95162a;font-size:14px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}

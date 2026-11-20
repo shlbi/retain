@@ -158,3 +158,17 @@
   .auth-submit { min-height: 48px; }
   .auth-mode-toggle { margin-top: 10px; }
 }
+
+.auth-recovery-link {
+  align-self: center;
+  min-height: 44px;
+  padding: 8px 4px;
+  line-height: 1.4;
+  color: var(--ink);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: .18em;
+}
+.auth-recovery-link:hover:enabled { color: #0a1b81; }
+#auth-request-password { margin-top: 4px; }
+#auth-enter-code.auth-submit { align-self: stretch; margin-top: 16px; }

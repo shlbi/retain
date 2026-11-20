@@ -34,7 +34,7 @@ const launch = async (supervisor, hours=0) => {
 };
 const tally = id => rpc('workspace_tally',id,dayKey(),JSON.stringify(
   tallyForCall({before:['internet'],kept:['internet'],mobileOrders:[]})),randomUUID());
-const makeSession = (id,token) => rpc('auth_create_session',id,token,new Date(Date.now()+3600000).toISOString());
+const makeSession = (id,token) => rpc('auth_create_verified_session',id,'synthetic',token,new Date(Date.now()+3600000).toISOString());
 const count = async (table, key, value) => (await sql('select count(*)::int as n from workspace_private.'+table+
   ' where '+key+'=$1',[value]))[0].n;
 const games = async supervisor => (await sql('select id from workspace_private.bingo_games where supervisor_id=$1 order by starts_at',[supervisor])).map(row=>row.id);

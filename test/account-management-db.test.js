@@ -58,7 +58,7 @@ test('new requests hold a username without opening a workspace, and review is at
   await assert.rejects(create('cara','agent'),/DUPLICATE/);
   const pending = await rpc('auth_get_user','CaRa');
   assert.equal(pending.status,'pending');
-  await assert.rejects(rpc('auth_create_session',pending.id,token('b'),expiry()),/foreign key/);
+  assert.equal(await rpc('auth_create_verified_session',pending.id,hash,token('b'),expiry()),false);
   assert.equal(await rpc('auth_session',token('b')),null);
   const roster = await directory();
   assert.equal(roster.accounts.some(a=>a.username==='Cara'),false);
@@ -74,7 +74,7 @@ test('new requests hold a username without opening a workspace, and review is at
   assert.equal(approved.status,'active');
   assert.equal(approved.password_hash,hash);
   assert.notEqual(approved.id,pending.id);
-  await rpc('auth_create_session',approved.id,token('c'),expiry());
+  assert.equal(await rpc('auth_create_verified_session',approved.id,hash,token('c'),expiry()),true);
   assert.equal((await rpc('auth_session',token('c'))).id,approved.id);
   assert.equal((await findUser('Cara')).role,'supervisor');
   await assert.rejects(request('cara'),/DUPLICATE/);

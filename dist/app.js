@@ -161,6 +161,7 @@ function clearAdminReport() {
   $('admin-report').replaceChildren();
 }
 function setAdminSection(section, load = true) {
+  if (adminSection === 'accounts' && section !== 'accounts') accountManagement.leave();
   adminSection = section;
   for (const name of ['accounts','performance','teams']) {
     $('admin-'+name).hidden = section !== name;
@@ -212,6 +213,7 @@ function setView(next,scroll=true) {
   if (watchingTeam()) allowed.push('goals');
   if (teamContext.role === 'admin') allowed.push('admin');
   view = allowed.includes(next) ? next : 'today';
+  if (previous === 'admin' && view !== 'admin') accountManagement.leave();
   for (const name of ['today','calls','goals','admin']) $('view-'+name).hidden = view !== name;
   document.querySelectorAll('.desktop-nav [data-view],.mobile-nav [data-view]').forEach(el => {
     el.classList.toggle('active',el.dataset.view===view);
@@ -224,7 +226,7 @@ function setView(next,scroll=true) {
       watchingTeam() ? (name ? 'Daily outcomes and progress toward assigned goals.' : 'No agents are assigned to your team yet.') : 'Every conversation counts. See how yours add up.'],
     calls: ['Call log',watchingTeam() ? (name ? name+'’s call log' : 'Team call log') : 'Your call log.', 'Daily counts by outcome and service.'],
     goals: ['Goals','Team goals','Set a performance target for everyone or choose individual agents.'],
-    admin: ['Admin','Admin',adminSection === 'accounts' ? 'Review sign-up requests and manage account access.' : adminSection === 'teams' ? 'Choose supervisors and manage their teams.' : 'See how agents use the tracker and how the app responds.']
+    admin: ['Admin','Admin',adminSection === 'accounts' ? 'Review requests and manage account access.' : adminSection === 'teams' ? 'Choose supervisors and manage their teams.' : 'See how agents use the tracker and how the app responds.']
   };
   const [label,title,description] = titles[view];
   $('breadcrumb-label').textContent=label;
@@ -427,7 +429,20 @@ async function syncFromStorage(){
  }
 }
 function authMessage(message){$('auth-error').textContent=message;$('auth-error').hidden=!message;}
-function setAuthBusy(value){authBusy=value;$('auth-form').querySelectorAll('input,button').forEach(el=>el.disabled=value);$('auth-mode-toggle').disabled=value;$('auth-submit').textContent=value?'Please wait…':authMode==='signup'?'Submit request':'Sign in';}
+const authViews = {
+  login:{title:'Welcome back',submit:'Sign in'},
+  signup:{title:'Request access',submit:'Submit request'},
+  requestPasswordChange:{title:'Request password change',submit:'Send request'},
+  requestSent:{title:'Request submitted',submit:''},
+  completePasswordChange:{title:'Set a new password',submit:'Change password'}
+};
+function setAuthBusy(value) {
+  authBusy = value;
+  $('auth-view').querySelectorAll('input,button').forEach(control => {
+    control.disabled = value || !!control.closest('[hidden]');
+  });
+  $('auth-submit').textContent = value ? 'Please wait…' : authViews[authMode].submit;
+}
 function setPasswordVisible(visible) {
   $('password').type = visible ? 'text' : 'password';
   const toggle = document.querySelector('[data-action="toggle-password"]');
@@ -435,23 +450,56 @@ function setPasswordVisible(visible) {
   toggle.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
 }
 function renderAuth() {
-  const signup = authMode === 'signup';
-  $('auth-title').textContent = signup ? 'Request access' : 'Welcome back';
-  $('auth-submit').textContent = signup ? 'Submit request' : 'Sign in';
-  $('auth-mode-toggle').textContent = signup ? 'Back to sign in' : 'Request an account';
+  const signup = authMode === 'signup', reset = authMode === 'completePasswordChange';
+  const request = authMode === 'requestPasswordChange', sent = authMode === 'requestSent';
+  $('auth-title').textContent = authViews[authMode].title;
+  $('auth-mode-toggle').textContent = authMode === 'login' ? 'Request an account' : 'Back to sign in';
+  $('auth-request-password').hidden = authMode !== 'login';
+  $('auth-enter-code').hidden = !request && !sent;
+  $('auth-enter-code').className = sent ? 'auth-submit' : 'auth-recovery-link';
+  $('auth-enter-code').textContent = sent ? 'Enter reset code' : 'I have a reset code';
+  $('auth-username-field').hidden = sent;
+  $('auth-password-field').hidden = request || sent;
+  $('auth-code-field').hidden = !reset;
+  $('reset-code').required = reset;
+  $('auth-password-label').textContent = reset ? 'New password' : 'Password';
+  $('auth-submit').hidden = sent;
   $('signup-role-field').hidden = !signup;
   $('signup-confirmation').hidden = true;
-  $('password').autocomplete = signup ? 'new-password' : 'current-password';
-  for (const name of ['username', 'password']) {
-    const input = $(name);
-    const rule = $(name + '-rule');
-    rule.hidden = !signup;
+  $('password').autocomplete = signup || reset ? 'new-password' : 'current-password';
+  $('password').value = '';
+  $('reset-code').value = '';
+  $('username-rule').hidden = !signup;
+  $('password-rule').hidden = !signup && !reset;
+  for (const input of [$('username'),$('password'),$('reset-code')]) {
     input.removeAttribute('aria-invalid');
-    if (signup) input.setAttribute('aria-describedby', rule.id);
-    else input.removeAttribute('aria-describedby');
+    const rule = $(input.id + '-rule');
+    if (rule.hidden) input.removeAttribute('aria-describedby');
+    else input.setAttribute('aria-describedby',rule.id);
   }
   setPasswordVisible(false);
   authMessage('');
+  setAuthBusy(authBusy);
+}
+
+function switchAuthMode(mode) {
+  authMode = mode;
+  renderAuth();
+  (mode === 'completePasswordChange' && $('username').value.trim() ? $('reset-code') : $('username')).focus();
+}
+
+function authConfirmation(message) {
+  $('signup-confirmation').textContent = message;
+  $('signup-confirmation').hidden = false;
+}
+
+function invalidAuthField(id,message) {
+  const input = $(id);
+  input.setAttribute('aria-invalid','true');
+  const rule = $(id + '-rule');
+  input.setAttribute('aria-describedby',rule.hidden ? 'auth-error' : rule.id + ' auth-error');
+  authMessage(message);
+  input.focus();
 }
 /** Clear one account's data before displaying another account or the sign-in form. */
 function showSignIn(message=''){
@@ -469,53 +517,59 @@ async function enterWorkspace(user){
 }
 async function submitAuth(event) {
   event.preventDefault();
-  if (authBusy) return;
-  const username = $('username').value;
-  const password = $('password').value;
+  if (authBusy || authMode === 'requestSent') return;
+  const mode = authMode, username = $('username').value, password = $('password').value;
+  const code = $('reset-code').value.trim();
   authMessage('');
-  if (authMode === 'signup') {
-    const errors = signupRules(username, password);
-    const firstInvalid = errors.username ? 'username' : errors.password ? 'password' : null;
-    for (const name of ['username', 'password']) {
-      const input = $(name);
-      if (name === firstInvalid) {
-        input.setAttribute('aria-invalid', 'true');
-        input.setAttribute('aria-describedby', name + '-rule auth-error');
-      } else {
-        input.removeAttribute('aria-invalid');
-        input.setAttribute('aria-describedby', name + '-rule');
-      }
+  if (mode === 'requestPasswordChange' || mode === 'completePasswordChange') {
+    if (!username.trim()) return invalidAuthField('username','Enter your username.');
+    if (mode === 'completePasswordChange' && !/^[0-9a-f]{32}$/i.test(code)) {
+      return invalidAuthField('reset-code','Enter the 32-character reset code from your admin.');
     }
-    if (firstInvalid) {
-      authMessage(errors[firstInvalid]);
-      $(firstInvalid).focus();
-      return;
-    }
+  }
+  if (mode === 'signup' || mode === 'completePasswordChange') {
+    const errors = signupRules(username,password);
+    if (mode === 'signup' && errors.username) return invalidAuthField('username',errors.username);
+    if (errors.password) return invalidAuthField('password',errors.password);
   }
   authenticating = true;
   sessionRequest++;
   setAuthBusy(true);
+  let focusAfter;
   try {
-    const signup = authMode === 'signup';
-    const credentials = signup ? {username,password,requestedRole:$('auth-form').elements.requestedRole.value} : {username,password};
-    const result = await apiRequest(authMode,credentials);
-    $('password').value = '';
-    if (signup) {
+    if (mode === 'requestPasswordChange') {
+      const result = await apiRequest(mode,{username:username.trim()});
+      if (!result?.ok) throw new Error('Could not confirm your request. Please try again.');
+      authMode = 'requestSent';
+      renderAuth();
+      authConfirmation('If this username belongs to an account, an admin can approve the request and share a reset code with you.');
+      focusAfter = $('auth-enter-code');
+    } else if (mode === 'completePasswordChange') {
+      const result = await apiRequest(mode,{username:username.trim(),code,password});
+      if (!result?.ok) throw new Error('Could not confirm your password change. Please try again.');
+      authMode = 'login';
+      renderAuth();
+      authConfirmation('Password changed. Sign in with your new password.');
+      focusAfter = $('password');
+    } else if (mode === 'signup') {
+      const result = await apiRequest(mode,{username,password,requestedRole:$('auth-form').elements.requestedRole.value});
       if (result.status !== 'pending') throw new Error('Could not confirm your sign-up request. Refresh to check its status.');
       authMode = 'login';
       $('auth-form').elements.requestedRole.value = 'agent';
       renderAuth();
-      $('signup-confirmation').textContent = 'Request submitted. You can sign in after an admin approves your account.';
-      $('signup-confirmation').hidden = false;
-      return;
+      authConfirmation('Request submitted. You can sign in after an admin approves your account.');
+    } else {
+      const result = await apiRequest(mode,{username,password});
+      $('password').value = '';
+      await enterWorkspace(result.user);
+      channel?.postMessage({sessionChanged:true});
     }
-    await enterWorkspace(result.user);
-    channel?.postMessage({sessionChanged:true});
   } catch (error) {
-    authMessage(error.message || 'Could not sign in. Please try again.');
+    authMessage(error.message || 'Could not complete this request. Please try again.');
   } finally {
     authenticating = false;
     setAuthBusy(false);
+    focusAfter?.focus();
   }
 }
 async function signOut(){if(busy)return;if(entry.dirty()){showDialog('Sign out?',`<p>You have an unfinished call. Signing out discards this entry.</p><div class="dialog-actions"><button class="button secondary" data-action="close-dialog">Keep editing</button><button class="button primary" data-action="confirm-sign-out">Sign out</button></div>`);return;}await finishSignOut();}
@@ -535,11 +589,15 @@ $('auth-form').addEventListener('input', ({target}) => {
   $('signup-confirmation').hidden = true;
   if (target.getAttribute('aria-invalid') === 'true') {
     target.removeAttribute('aria-invalid');
-    target.setAttribute('aria-describedby', target.name + '-rule');
+    const rule = $(target.id + '-rule');
+    if (rule?.hidden) target.removeAttribute('aria-describedby');
+    else if (rule) target.setAttribute('aria-describedby',rule.id);
     authMessage('');
   }
 });
-$('auth-mode-toggle').addEventListener('click',()=>{authMode=authMode==='login'?'signup':'login';renderAuth();});
+$('auth-mode-toggle').addEventListener('click',() => switchAuthMode(authMode === 'login' ? 'signup' : 'login'));
+$('auth-request-password').addEventListener('click',() => switchAuthMode('requestPasswordChange'));
+$('auth-enter-code').addEventListener('click',() => switchAuthMode('completePasswordChange'));
 window.addEventListener('session-expired',event=>{if(event.detail?.userId===sessionUser?.id)showSignIn('Your session changed or expired. Sign in again.');});
 $('report-date').addEventListener('change',event=>{const value=event.target.value;if(validDay(value)&&value<=dayKey()){selectedDay=value;allHistory=false;page=0;renderDashboard();}});
 $('team-agent').addEventListener('change',async () => {

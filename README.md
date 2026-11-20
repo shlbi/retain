@@ -48,6 +48,16 @@ Each submission includes a random retry token so retrying the same submission ca
 
 Use credentials created specifically for this tracker. Each can contain 1–8 characters. Usernames cannot start with a digit, `p` or `P`. Existing accounts can continue to sign in with their original credentials. To request access, choose **Agent** or **Supervisor** on the sign-up screen. After an admin approves the request, sign in with the same username and password.
 
+### Requests and password changes
+
+In **Admin → Accounts → Requests**, search by username and filter by request type to review sign-ups or password changes. Sign-up approval includes the role and team assignment. A password change has a separate approval and leaves the person's role, team and call history intact.
+
+1. From the login page, choose **Request password change** and submit your tracker username.
+2. An admin verifies who requested the change, approves it in **Requests** and gives that person the one-time reset code privately. The code is shown to the approving admin once and expires in 30 minutes.
+3. Return to **Request password change**, open the reset-code form and enter the username, code and new password. Then sign in with the new password. Completing the change ends existing sessions on every device.
+
+If the code expires or is lost, submit a new request. Requesting a change, approving it or denying it leaves the current password usable until a reset succeeds.
+
 The app uses its own username/password accounts and an HttpOnly session cookie. Each password has a random 128-bit salt and a one-way scrypt hash. New hashes use `N=32768, r=8, p=3`. A successful credential check upgrades an older hash, including on a pending account. Pending applicants still need approval to sign in. Database credentials stay in the same-origin Vercel functions. The eight-character password limit is a product constraint and restricts resistance to guessing.
 
 The [database schema guide](docs/SCHEMA.md) explains how accounts, memberships, game scores, daily totals and API permissions fit together. Run the [read-only inventory query](scripts/schema-inventory.sql) in the Supabase SQL Editor to inspect the deployed structure without reading account or call data.

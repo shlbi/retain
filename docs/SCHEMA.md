@@ -41,6 +41,15 @@ These operations remove live application records. Daily technical request counts
 
 The username is visible in the roster and directory. The server stores a salted scrypt password verifier in `users.password_hash` or `signup_requests.password_hash`. A successful verification of an older password hash can upgrade it in place with the password-hash upgrade migration and matching server release. That routine compares the stored hash with the verified hash before replacing it, so a concurrent approval or edit cannot overwrite a changed credential. The browser holds the session token in an HttpOnly cookie. Only its digest is stored in `sessions`.
 
+The password-change migration adds two tables to `workspace_private`. Each references `users.id` and cascades on account deletion.
+
+| Table | Stored data and lifetime |
+| --- | --- |
+| `password_change_requests` | A request ID, user ID and submission time. Each active account can have one pending request. Approval or denial consumes the request. |
+| `password_change_codes` | A user ID, SHA-256 digest of a randomly generated reset code and expiry time. A code is usable once for 30 minutes. Approving a later request replaces the earlier code. |
+
+The admin directory projects the request ID, username and submission time. The approving admin receives the code for private delivery. The user submits the code and chooses the new password. Redemption replaces the password hash, consumes the reset and revokes the account’s sessions in one transaction. Sign-in checks that the credential verified by the server still matches the account before it issues a session.
+
 The baseline inventory showed RLS enabled on all ten tables. The `anon`, `authenticated` and `service_role` roles had no direct table grants. Among those roles, only `service_role` could execute the application's public routines. The backend calls fixed routine names with structured arguments using its server-only key. Privileged operations check the session user's current role and membership inside Postgres. Database owners retain administrative access.
 
 | Routine group | Purpose |

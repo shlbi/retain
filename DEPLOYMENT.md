@@ -63,6 +63,12 @@ The API uses expiring sessions, salted password hashes, rate limits and atomic p
 
 Apply the password-hash upgrade migration before deploying its server release. New and admin-created accounts immediately use the stronger scrypt profile described in the README. A legacy upgrade compares the previously verified digest and identity to avoid overwriting a concurrent change. Existing sessions continue on their normal expiry schedule. Any rollback must retain verification for both the p=1 and p=3 formats. Each function instance runs at most two password derivations at once and queues up to eight more. Requests beyond capacity receive a retryable response.
 
+For the password-change rollout on an existing installation, deploy the server that supports credential-checked session creation first. Then apply the password-change migration and release the login and admin controls. The migration retires the previous service-role session-creation entry point. Any server rollback must continue to use the credential-checked entry point.
+
+In a test database, submit a password-change request for a synthetic account and open **Admin → Accounts → Requests**. Check username search, both type filters and denial. Approve another request, redeem its code in a separate browser session, then verify the new password works, previous sessions have ended and the same code cannot be reused.
+
+Approval requires an active admin session. If the only admin loses their password and all active sessions, recovery requires a trusted Supabase project operator.
+
 
 ## Team setup and permissions
 
