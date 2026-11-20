@@ -435,6 +435,90 @@ test('team editor database conflicts and missing migrations have specific safe m
   }
 });
 
+const deleteTeam = {action:'adminDeleteTeam',supervisorId:USER_B.id,expectedTeamId:requestId,
+  expectedName:'North',expectedMemberIds:[USER_A.id]};
+const deleteAccount = {action:'adminDeleteAccount',accountId:USER_B.id,expectedUsername:'1 Legacy User',expectedRole:'supervisor',
+  expectedSupervisorId:null,expectedTeamId:requestId,expectedTeamName:'North',expectedMemberIds:[USER_A.id]};
+
+test('the directory publishes stable team identifiers and ownership for account deletion',async()=>{
+  const owner={id:USER_B.id,username:'Member',role:'agent',supervisorId:null,ownedTeamId:requestId,ownedTeamName:'Dormant'};
+  const team={id:requestId,supervisorId:USER_B.id,name:'North'};
+  const db=fakeDatabase(), rpc=db.rpc.bind(db);
+  db.rpc=(name,args)=>name==='workspace_admin_accounts'
+    ? {accounts:[{...owner,password_hash:'secret'}],teams:[{...team,internal_detail:'private'}],pending:[]}
+    : rpc(name,args);
+  const actual=await request(createHandler({env:ENV,database:db}),{method:'GET',url:'/api/workspace?action=adminAccounts',cookie:session()});
+  assert.deepEqual(actual.body,{accounts:[owner],teams:[team],pending:[]});
+});
+
+test('deletion binds verified identity, complete snapshots, and database confirmation',async()=>{
+  const db=fakeDatabase(), rpc=db.rpc.bind(db), writes=[], cookie=session();
+  db.rpc=(name,args)=>{
+    if (!name.startsWith('workspace_admin_delete_')) return rpc(name,args);
+    writes.push({name,args});
+    return {ok:true,private_field:'filtered'};
+  };
+  const handler=createHandler({env:ENV,database:db});
+  const agent={...deleteAccount,expectedRole:'agent',expectedSupervisorId:requestId,
+    expectedUsername:'🌷'.repeat(64),expectedTeamId:null,expectedTeamName:null,expectedMemberIds:[]};
+  const forbidden=new ApiError(403,'FORBIDDEN','Administrator access required.');
+  const denied=createHandler({env:ENV,database:fakeDatabase({fail:{workspace_admin_delete_team:forbidden,workspace_admin_delete_account:forbidden}})});
+  const unconfirmed=createHandler({env:ENV,database:fakeDatabase()});
+  for (const body of [deleteTeam,deleteAccount,agent]) {
+    assert.equal((await request(handler,{body})).status,401);
+    assert.equal((await request(handler,{cookie,expected:USER_B.id,body})).status,401);
+    assert.equal((await request(denied,{cookie,body})).status,403);
+    assert.equal((await request(unconfirmed,{cookie,body})).status,503);
+    const result=await request(handler,{cookie,body});
+    assert.equal(result.status,200);
+    assert.deepEqual(result.body,{ok:true});
+  }
+  assert.deepEqual(writes,[
+    {name:'workspace_admin_delete_team',args:{p_user_id:USER_A.id,p_supervisor_id:USER_B.id,
+      p_expected_team_id:requestId,p_expected_name:'North',p_expected_member_ids:[USER_A.id]}},
+    {name:'workspace_admin_delete_account',args:{p_user_id:USER_A.id,p_account_id:USER_B.id,p_expected_username:'1 Legacy User',
+      p_expected_role:'supervisor',p_expected_supervisor_id:null,p_expected_team_id:requestId,p_expected_team_name:'North',p_expected_member_ids:[USER_A.id]}},
+    {name:'workspace_admin_delete_account',args:{p_user_id:USER_A.id,p_account_id:USER_B.id,p_expected_username:agent.expectedUsername,
+      p_expected_role:'agent',p_expected_supervisor_id:requestId,p_expected_team_id:null,p_expected_team_name:null,p_expected_member_ids:[]}}
+  ]);
+});
+
+test('deletion rejects self, admin targets, and malformed snapshots before a delete RPC',async()=>{
+  const db=fakeDatabase(), cookie=session(), handler=createHandler({env:ENV,database:db});
+  for (const patch of [{accountId:USER_A.id},{expectedRole:'admin'}]) {
+    assert.equal((await request(handler,{cookie,body:{...deleteAccount,...patch}})).status,403);
+  }
+  for (const body of [
+    {...deleteTeam,expectedName:null},{...deleteTeam,expectedTeamId:null},{...deleteTeam,supervisorId:'bad'},
+    {...deleteTeam,expectedMemberIds:[requestId,requestId.toUpperCase()]},{...deleteTeam,expectedMemberIds:[USER_B.id]},
+    {...deleteAccount,accountId:'bad'},{...deleteAccount,expectedUsername:' '},{...deleteAccount,expectedUsername:'🌷'.repeat(65)},
+    {...deleteAccount,expectedRole:'unknown'},{...deleteAccount,expectedSupervisorId:requestId},{...deleteAccount,userId:USER_A.id},
+    {...deleteAccount,expectedTeamId:null},{...deleteAccount,expectedTeamName:null},
+    {...deleteAccount,expectedTeamId:null,expectedTeamName:null}
+  ]) assert.equal((await request(handler,{cookie,body})).status,400);
+  for (const body of [deleteTeam,deleteAccount]) {
+    for (const key of Object.keys(body)) {
+      const incomplete={...body};
+      delete incomplete[key];
+      assert.equal((await request(handler,{cookie,body:incomplete})).status,400);
+    }
+  }
+  assert.ok(!db.calls.some(call=>call.name.startsWith('workspace_admin_delete_')));
+});
+
+test('deletion diagnostics distinguish a changed team or account from a storage outage',async()=>{
+  for (const name of ['workspace_admin_delete_team','workspace_admin_delete_account']) {
+    for (const [category,pgCode,status,expectedCode] of [
+      ['CONFLICT','P0001',409,'CONFLICT'],['FORBIDDEN','P0001',403,'FORBIDDEN'],['VALIDATION','P0001',400,'VALIDATION'],
+      ['unknown','PGRST202',503,'SETUP'],['unknown','XX000',503,'STORAGE']
+    ]) {
+      const db=createDatabase({SUPABASE_URL:'https://database.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_example'},
+        async()=>({ok:false,json:async()=>({code:pgCode,message:category+': private data'})}));
+      await assert.rejects(db.rpc(name),error=>error.status===status && error.code===expectedCode && !error.message.includes('private'));
+    }
+  }
+});
+
 test('game scheduling has no team override and game reads use the current session actor',async()=>{
   const db = fakeDatabase(), cookie = session(), handler = createHandler({env:ENV,database:db});
   const schedule = {action:'gameSchedule',title:'Bingo',incentive:'',startsAt:'2026-11-19T12:00:00Z',

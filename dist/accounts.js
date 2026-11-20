@@ -1,4 +1,5 @@
 import { signupRules } from './signup-rules.js';
+import { confirmDelete, closeDeleteConfirmation } from './confirm-delete.js';
 
 const $ = id => document.getElementById(id);
 const roles = {agent:'Agent', supervisor:'Supervisor', admin:'Admin'};
@@ -55,7 +56,7 @@ function assignment(form) {
 
 export function createAccountManagement(request, actorId) {
   const createForm = $('admin-create-form'), dialog = $('account-dialog'), editForm = $('account-dialog-form');
-  const status = $('accounts-status'), finder = $('directory-query');
+  const status = $('accounts-status'), statusError = $('accounts-error'), finder = $('directory-query');
   let roster = null, supervisors = [], page = 0, generation = 0, busy = false, editing = null;
 
   function setBusy(value) {
@@ -144,6 +145,7 @@ export function createAccountManagement(request, actorId) {
     if (busy || !actorId()) return;
     const version = generation;
     status.textContent = 'Loading accounts…';
+    statusError.textContent = '';
     setBusy(true);
     try {
       await fetchRoster(version);
@@ -151,7 +153,8 @@ export function createAccountManagement(request, actorId) {
     } catch (error) {
       if (version === generation) {
         if (error.code === 'FORBIDDEN') reset();
-        status.textContent = error.message || 'Could not load accounts. Refresh to try again.';
+        status.textContent = '';
+        statusError.textContent = error.message || 'Could not load accounts. Refresh to try again.';
       }
     } finally {
       if (version === generation) setBusy(false);
@@ -163,7 +166,7 @@ export function createAccountManagement(request, actorId) {
     const version = generation;
     setBusy(true);
     if (form) formError(form);
-    status.textContent = '';
+    status.textContent = statusError.textContent = '';
     try {
       await request(action,payload);
       if (version !== generation) return;
@@ -171,15 +174,20 @@ export function createAccountManagement(request, actorId) {
       status.textContent = message;
       try {
         await fetchRoster(version);
-      } catch {
-        if (version === generation) status.textContent = message+' Refresh to see the updated list.';
+      } catch (error) {
+        if (version === generation) {
+          reset();
+          status.textContent = message;
+          statusError.textContent = error.code === 'FORBIDDEN' ? error.message : 'The updated directory could not be loaded. Refresh Accounts to see the latest list.';
+          $('accounts-refresh').focus();
+        }
       }
     } catch (error) {
       if (version !== generation) return;
       const message = error.message || 'Could not save this change. Refresh to see the current accounts.';
-      if (error.code === 'FORBIDDEN') { reset(); status.textContent = message; }
+      if (error.code === 'FORBIDDEN') { reset(); statusError.textContent = message; }
       else if (form) formError(form,message);
-      else status.textContent = message;
+      else statusError.textContent = message;
     } finally {
       if (version === generation) setBusy(false);
     }
@@ -187,9 +195,23 @@ export function createAccountManagement(request, actorId) {
 
   function openEditor(mode, person) {
     if (busy || !roster || !actorId()) return;
-    editing = {mode,person};
     formError(editForm);
     const deny = mode === 'deny', self = actorId() === person.id;
+    const ownedTeam = person.ownedTeamName;
+    const memberIds = deny ? [] : roster.accounts.filter(account => account.supervisorId === person.id).map(account => account.id);
+    const deletable = !deny && !self && ['agent','supervisor'].includes(person.role);
+    const activeTeam = !!ownedTeam && roster.teams?.some(team => team.supervisorId === person.id);
+    editing = {mode,person,ownedTeam,memberIds,deletable};
+    $('account-delete').hidden = !deletable;
+    $('account-team-block').hidden = !deletable || !ownedTeam;
+    $('account-manage-teams').hidden = !activeTeam;
+    const teamHint = $('account-team-block-message');
+    teamHint.textContent = '';
+    if (deletable && ownedTeam) {
+      teamHint.textContent = activeTeam
+        ? 'To keep '+ownedTeam+', assign a different supervisor before deleting this account.'
+        : 'This account owns the inactive team '+ownedTeam+'. To keep it, restore the Supervisor role and reassign the team in Teams.';
+    }
     $('account-dialog-title').textContent = (deny ? 'Deny request from ' : 'Edit ')+person.username;
     $('account-edit-fields').hidden = deny;
     $('account-dialog-detail').textContent = deny
@@ -197,7 +219,7 @@ export function createAccountManagement(request, actorId) {
       : self ? 'Your own admin role is locked. You can still choose your supervisor.' : '';
     $('account-dialog-submit').textContent = deny ? 'Deny request' : 'Save changes';
     if (!deny) {
-      const hasTeam = person.role === 'supervisor' && roster.accounts.some(a => a.supervisorId === person.id);
+      const hasTeam = person.role === 'supervisor' && memberIds.length > 0;
       editForm.elements.role.value = person.role;
       editForm.elements.role.disabled = self || hasTeam;
       if (hasTeam) $('account-dialog-detail').textContent = 'Reassign this supervisor’s team members before changing their role.';
@@ -210,15 +232,18 @@ export function createAccountManagement(request, actorId) {
 
   function reset() {
     generation++;
+    if (editing) closeDeleteConfirmation();
     roster = null; supervisors = []; editing = null; page = 0;
     dialog.close(); editForm.reset(); createForm.reset(); finder.value = '';
     formError(createForm); formError(editForm);
     for (const id of ['signup-requests','account-directory','request-count','directory-count','directory-page','account-dialog-detail','account-dialog-title']) $(id).replaceChildren();
     $('request-count').hidden = $('directory-count').hidden = $('directory-pages').hidden = true;
+    $('account-delete').hidden = $('account-team-block').hidden = true;
+    $('account-team-block-message').textContent = '';
     teamOptions(createForm.elements.supervisorId,[],null);
     editForm.elements.supervisorId.replaceChildren();
     teamVisibility(createForm);
-    status.textContent = '';
+    status.textContent = statusError.textContent = '';
     setBusy(false);
   }
 
@@ -241,6 +266,33 @@ export function createAccountManagement(request, actorId) {
     mutate('adminCreateAccount',payload,payload.username+' created.',createForm,() => {createForm.reset();teamVisibility(createForm);});
   });
   editForm.elements.role.addEventListener('change',() => teamVisibility(editForm));
+  $('account-manage-teams').addEventListener('click',() => {
+    dialog.close();
+    $('admin-open-teams').click();
+  });
+  $('account-delete').addEventListener('click',async () => {
+    const snapshot = editing, actor = actorId(), directory = roster;
+    if (!snapshot?.deletable || !actor || busy) return;
+    const {person,ownedTeam,memberIds} = snapshot;
+    const hasTeamSnapshot = (person.ownedTeamId === null && ownedTeam === null) ||
+      (typeof person.ownedTeamId === 'string' && typeof ownedTeam === 'string');
+    if (!hasTeamSnapshot) {
+      formError(editForm,'Update the database and refresh Accounts before deleting an account.');
+      return;
+    }
+    let description = 'This permanently deletes '+person.username+'’s account, sign-in credentials, active sessions, call tallies, goals and game scores.';
+    if (ownedTeam) description += ' It also deletes the team '+ownedTeam+' and its games and scores. Team members keep their accounts and tallies and become unassigned.';
+    const confirmed = await confirmDelete({title:'Delete '+person.username+'?',description,action:'Delete account'});
+    if (!confirmed || !dialog.open || editing !== snapshot || actorId() !== actor || roster !== directory || busy) return;
+    // Use the saved assignment shown when the editor opened, independent of any draft form changes.
+    const payload = {accountId:person.id,expectedUsername:person.username,expectedRole:person.role,
+      expectedSupervisorId:person.supervisorId,expectedTeamId:person.ownedTeamId,
+      expectedTeamName:ownedTeam,expectedMemberIds:memberIds};
+    await mutate('adminDeleteAccount',payload,person.username+' deleted.',editForm,() => {
+      dialog.close();
+      finder.focus();
+    });
+  });
   editForm.addEventListener('submit',event => {
     event.preventDefault();
     if (!editing) return;
@@ -254,6 +306,10 @@ export function createAccountManagement(request, actorId) {
   $('account-dialog-close').addEventListener('click',() => dialog.close());
   $('account-dialog-cancel').addEventListener('click',() => dialog.close());
   dialog.addEventListener('cancel',event => {if (busy) event.preventDefault();});
-  dialog.addEventListener('close',() => {editing = null;});
+  dialog.addEventListener('close',() => {
+    if (dialog.open) return;
+    if (editing) closeDeleteConfirmation();
+    editing = null;
+  });
   return {refresh,reset};
 }

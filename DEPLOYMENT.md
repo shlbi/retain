@@ -74,6 +74,8 @@ Use **Admin → Accounts** and **Admin → Teams** for normal operations.
 2. Give the intended leader the Supervisor role. Open **Admin → Teams → Create team**. Enter its name, choose the supervisor and select the roster in the same form. Use **Edit** on its row to update the team later. An agent or admin can also be assigned individually from the Accounts directory. Existing supervisors with rosters or games receive editable default names during the named-team migration.
 3. To change a supervisor's role, move their members first. Each admin keeps their own admin role when editing their own assignment. Role and roster checks run in the database on each privileged operation.
 
+Apply the admin deletion migration before deploying the delete controls. It adds a stable team identifier, includes team ownership in the admin directory and installs the two deletion procedures. Verify the destructive flows with synthetic accounts in a test database. Cover both a supervisor whose team transfers to a successor and a supervisor whose team is removed with the account.
+
 ### First admin on a fresh installation
 
 The production tracker already has an admin. The steps below are only for a new database that has none. Have the intended owner submit a sign-up and confirm the username directly with them. As a database operator, find that username in the private sign-up requests table and copy the matching request ID into the transaction below. The query consumes that exact request, transfers its existing password hash and creates the admin in the same transaction.

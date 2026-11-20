@@ -23,11 +23,19 @@ The November 19, 2026 inventory found ten application tables in `workspace_priva
 
 A supervisor's user ID identifies the roster. Each agent or admin can have one current supervisor. The roster used for dashboard access, goals, games and standings comes from the same `users.supervisor_id` relationship. The current leader of a game’s team is recorded in `bingo_games.supervisor_id`. A change of team updates who can see the agent and which team's live game receives future eligible scores. Games continue to use the existing game and player IDs.
 
-The named-team migration adds an eleventh table, `workspace_private.teams`. It has two columns. The primary key `supervisor_id` references the team leader's `users.id`. The case-insensitive unique index on `lower(name)` reserves each display name. A foreign key also links every `bingo_games.supervisor_id` to its team. The migration names existing rosters and game owners, including former supervisors who already had historical games. Assigning an agent through an older client also provisions a name if needed.
+The named-team migration adds an eleventh table, `workspace_private.teams`. The primary key `supervisor_id` references the team leader's `users.id`. The case-insensitive unique index on `lower(name)` reserves each display name. The deletion migration adds a unique `id` that survives leadership changes. Creating a team always generates a fresh ID, even when its supervisor and name match a previously deleted team. A foreign key also links every `bingo_games.supervisor_id` to its team. The migration names existing rosters and game owners, including former supervisors who already had historical games. Assigning an agent through an older client also provisions a name if needed.
 
 A named team is active while its assigned leader holds the supervisor role. The membership foreign key requires all members to move before that role can change. Demoting a supervisor retires an empty team without games. A team with games becomes dormant, disappears from the active directory and keeps its name and game IDs. Its former leader can participate as a player on their newly assigned team. Re-promoting that leader reactivates the dormant team with an empty roster. The admin can then assign its members again.
 
 The team editor calls `workspace_admin_save_team_details` to save the name, supervisor and complete roster in one transaction. It checks the original team name and membership plus the prior assignment of each selected member. An outdated edit returns a conflict. On a leadership handoff, the team’s games and scores keep their IDs and the new supervisor receives access. The earlier team procedures remain available to clients already open during rollout. The server takes the acting user from their session. Supervisor reads, goal changes and game launches use the supervisor's own roster. On transfer, the old team's Realtime topic rotates. Broadcasts contain an empty refresh signal. Standings are retrieved through the authenticated API.
+
+## Permanent deletion
+
+`workspace_admin_delete_team` checks the team's identity, supervisor, name and roster against the admin's confirmation. It clears the members' assignments, removes team games and their scores, and deletes the team in one transaction. Members retain their goals and tallies.
+
+`workspace_admin_delete_account` checks the account ID, username, role, assignment and any owned team's identity, name and members. This includes dormant teams with game history. The transaction removes an owned team, then the agent or supervisor account and its dependent sessions, tally days, groups, submission receipts and scores. A reused username identifies a new account. Admin accounts cannot be deleted by these procedures.
+
+These operations remove live application records. Daily technical request counts are aggregate measurements. Database backups and earlier exports have their own retention schedules.
 
 ## Credentials and privileges
 

@@ -68,6 +68,18 @@ Each team has one supervisor. A supervisor leads one team and an agent or admin 
 
 If you demote a supervisor after moving their members, a team with games keeps its name and history until you promote that same person again. An empty team without games releases its name.
 
+### Permanent deletion
+
+Only admins can delete teams or accounts. Open **Edit** beside the team or person, choose **Delete team** or **Delete account**, then confirm the name shown.
+
+| What you delete | What happens |
+| --- | --- |
+| A team | Its games and scores are removed. Its members become unassigned. Everyone keeps their login, goals and call history, and the supervisor can lead another team. |
+| An agent or supervisor account | The person loses access across devices. Their credentials, sessions, goals, call tallies and game scores are removed. The username becomes available again. |
+| An account that owns a team | The confirmation also names the team that will be deleted. To keep that team and its games, give it a new supervisor in **Admin → Teams** before deleting the account. |
+
+Admin accounts are protected from deletion. Confirmed deletions have no in-app undo.
+
 ### Team bingo
 
 Open **Games** to see the current board. A supervisor sets the incentive, start and end in local time, and a metric and target for each of nine squares. Choose a line (horizontal, vertical or diagonal) or blackout (all nine). A team can schedule multiple games with nonoverlapping time windows. The first confirmed submission of a tally scores once when its Eastern report date matches today and the server receives it during the game. Historical corrections update reporting independently because grouped history does not identify the time of each call. A wash contributes calls and any eligible additions or sales under the existing scoring rules.

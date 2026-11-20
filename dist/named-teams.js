@@ -1,3 +1,5 @@
+import {closeDeleteConfirmation, confirmDelete} from './confirm-delete.js';
+
 const $ = id => document.getElementById(id);
 const make = (tag, text) => {
   const node = document.createElement(tag);
@@ -86,6 +88,8 @@ export function createNamedTeams(request, actorId) {
   function updateControls() {
     $('team-fields').disabled = !directory || loading || saving;
     $('team-save').disabled = !directory || loading || saving || !$('team-supervisor-help').hidden;
+    $('team-delete').hidden = !original;
+    $('team-delete').disabled = loading || saving;
     $('team-cancel').disabled = $('team-close').disabled = saving;
   }
 
@@ -125,6 +129,7 @@ export function createNamedTeams(request, actorId) {
 
   function reset() {
     epoch++;
+    closeDeleteConfirmation();
     loading = saving = false;
     directory = null;
     closeEditor();
@@ -185,6 +190,7 @@ export function createNamedTeams(request, actorId) {
     status.textContent = '';
     $('team-dialog-title').textContent = team ? 'Edit team' : 'Create team';
     $('team-save').textContent = team ? 'Save changes' : 'Create team';
+    $('team-delete').textContent = 'Delete team';
     if (directory && !loading) populateEditor();
     else $('team-load-status').textContent = 'Loading team details…';
     updateControls();
@@ -193,7 +199,7 @@ export function createNamedTeams(request, actorId) {
     else refresh();
   }
 
-  async function save(event) {
+  function save(event) {
     event.preventDefault();
     if (saving || loading || !directory || !actorId() || $('team-save').disabled) return;
     const name = teamName.value.trim();
@@ -211,28 +217,57 @@ export function createNamedTeams(request, actorId) {
       return;
     }
 
-    const targetId = supervisorId.value, version = epoch;
+    const targetId = supervisorId.value;
     const message = name + (original ? ' updated.' : ' created.');
     const members = directory.accounts.filter(person => selected.has(person.id))
       .map(person => ({id:person.id,expectedSupervisorId:person.supervisorId ?? null}));
+    mutate('adminSaveTeamDetails', {
+      originalSupervisorId:original?.supervisorId ?? null, supervisorId:targetId, name,
+      expectedName:original?.name ?? null, expectedMemberIds, members
+    },message,targetId);
+  }
+
+  async function deleteTeam() {
+    const team = original, actor = actorId();
+    if (!team || !directory || !actor || loading || saving) return;
+    if (!team.id) {
+      errorBox.textContent = 'Update the team management database and reload Teams before deleting a team.';
+      $('team-reload').hidden = false;
+      return;
+    }
+    const version = epoch, memberCount = expectedMemberIds.length;
+    const payload = {supervisorId:team.supervisorId, expectedTeamId:team.id, expectedName:team.name, expectedMemberIds:[...expectedMemberIds]};
+    const leader = directory.accounts.find(person => person.id === team.supervisorId)?.username;
+    const roster = memberCount ? memberCount + (memberCount === 1 ? ' assigned member will become unassigned.' : ' assigned members will become unassigned.') + ' ' : '';
+    const approved = await confirmDelete({
+      title:'Delete team “' + team.name + '”?',
+      description:'This permanently deletes the team and all its games and scores. ' + roster +
+        'The supervisor' + (leader ? ' (' + leader + ')' : '') + ' and the team’s members keep their accounts and tallies.',
+      action:'Delete team'
+    });
+    if (!approved || !dialog.open || version !== epoch || original !== team || actorId() !== actor || saving) return;
+    await mutate('adminDeleteTeam',payload,team.name + ' deleted.',null);
+  }
+
+  async function mutate(action,payload,message,focusTeamId) {
+    const version = epoch;
+    const deleting = action === 'adminDeleteTeam', button = $(deleting ? 'team-delete' : 'team-save');
+    const label = button.textContent;
     saving = true;
     updateControls();
     errorBox.textContent = '';
     $('team-reload').hidden = true;
-    $('team-save').textContent = 'Saving…';
+    button.textContent = deleting ? 'Deleting…' : 'Saving…';
     let confirmed = false;
     try {
-      await request('adminSaveTeamDetails', {
-        originalSupervisorId:original?.supervisorId ?? null, supervisorId:targetId, name,
-        expectedName:original?.name ?? null, expectedMemberIds, members
-      });
+      await request(action,payload);
       if (epoch !== version) return;
       confirmed = true;
       const result = await readDirectory();
       if (epoch !== version) return;
       directory = result;
       renderList();
-      closeEditor(targetId);
+      closeEditor(focusTeamId);
       status.textContent = message;
     } catch (error) {
       if (epoch !== version) return;
@@ -249,14 +284,13 @@ export function createNamedTeams(request, actorId) {
       if (epoch === version) {
         saving = false;
         updateControls();
-        if (dialog.open) {
-          $('team-save').textContent = original ? 'Save changes' : 'Create team';
-          $('team-save').focus();
-        }
+        button.textContent = label;
+        if (dialog.open) button.focus();
       }
     }
   }
 
+  $('team-delete').addEventListener('click',deleteTeam);
   $('teams-create').addEventListener('click',() => openEditor());
   list.addEventListener('click',event => {
     const edit = event.target.closest('button[data-team]');

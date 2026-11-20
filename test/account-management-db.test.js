@@ -132,7 +132,7 @@ test('only an admin may list, create, review, and reassign roles and teams',asyn
   await assert.rejects(directory(otherAdmin.id),/FORBIDDEN/);
   await assign(owner,await findUser('AdminB'),'admin');
   assert.ok((await directory(otherAdmin.id)).accounts.length > 0);
-  assert.deepEqual(Object.keys((await directory()).accounts[0]).sort(),['id','role','supervisorId','username']);
+  assert.deepEqual(Object.keys((await directory()).accounts[0]).sort(),['id','ownedTeamId','ownedTeamName','role','supervisorId','username']);
 });
 
 test('public clients cannot run identity-management operations or read pending credentials',async()=>{

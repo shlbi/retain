@@ -10,6 +10,8 @@ const ACTION_FIELDS = {signup:['username','password','requestedRole'],login:['us
   adminAssignAccount:['accountId','role','supervisorId','expectedRole','expectedSupervisorId'],
   adminSaveTeam:['supervisorId','name','expectedName'],adminAddTeamMembers:['supervisorId','members'],
   adminSaveTeamDetails:['originalSupervisorId','supervisorId','name','expectedName','expectedMemberIds','members'],
+  adminDeleteTeam:['supervisorId','expectedTeamId','expectedName','expectedMemberIds'],
+  adminDeleteAccount:['accountId','expectedUsername','expectedRole','expectedSupervisorId','expectedTeamId','expectedTeamName','expectedMemberIds'],
   agentState:['agentId'],teamGoals:['agentIds','goals'],gameSchedule:['title','incentive','startsAt','endsAt','pattern','squares']};
 const READ_ACTIONS = {
   state:'workspace_tally_state', teamContext:'workspace_team_context',
@@ -166,10 +168,10 @@ function validatePriorTeam(originalSupervisorId, expectedName, expectedMemberIds
 function accountDirectory(value) {
   return {
     pending:value.pending.map(({id,username,requestedRole,requestedAt}) => ({id,username,requestedRole,requestedAt})),
-    accounts:value.accounts.map(({id,username,role,supervisorId}) => ({id,username,role,supervisorId})),
+    accounts:value.accounts.map(({id,username,role,supervisorId,ownedTeamId,ownedTeamName}) => ({id,username,role,supervisorId,ownedTeamId,ownedTeamName})),
     // Accounts remain usable on the previous schema. Teams needs to distinguish
     // an unavailable directory from a successfully loaded, empty roster.
-    teams:Array.isArray(value.teams) ? value.teams.map(({supervisorId,name}) => ({supervisorId,name})) : null
+    teams:Array.isArray(value.teams) ? value.teams.map(({id,supervisorId,name}) => ({id,supervisorId,name})) : null
   };
 }
 /** A schema mismatch must never expose unvalidated columns or legacy identifiers. */
@@ -277,6 +279,39 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
           });
           break;
         }
+        case 'adminDeleteTeam': {
+          const {supervisorId,expectedTeamId,expectedName,expectedMemberIds} = body;
+          if (!isUuid(supervisorId) || !isUuid(expectedTeamId)) throw VALIDATION('Choose a current team to delete.');
+          validatePriorTeam(supervisorId,expectedName,expectedMemberIds);
+          result = await db.rpc('workspace_admin_delete_team',{
+            p_user_id:user.id,p_supervisor_id:supervisorId,p_expected_team_id:expectedTeamId,
+            p_expected_name:expectedName,p_expected_member_ids:expectedMemberIds
+          });
+          break;
+        }
+        case 'adminDeleteAccount': {
+          const {accountId,expectedUsername,expectedRole,expectedSupervisorId,expectedTeamId,expectedTeamName,expectedMemberIds} = body;
+          if (!isUuid(accountId)) throw VALIDATION('Choose a current account to delete.');
+          if (user.id.toLowerCase() === accountId.toLowerCase() || expectedRole === 'admin') {
+            throw new ApiError(403,'FORBIDDEN','Only agent and supervisor accounts can be deleted.');
+          }
+          validateAssignment(expectedRole,expectedSupervisorId,signupRoles);
+          if (expectedTeamName === null ? expectedTeamId !== null : !isUuid(expectedTeamId)) {
+            throw VALIDATION('Include the current team identity for this account.');
+          }
+          validatePriorTeam(expectedTeamName === null ? null : accountId,expectedTeamName,expectedMemberIds);
+          // Use the account's exact stored name, including names created under the older 64-character limit.
+          if (typeof expectedUsername !== 'string' || !expectedUsername.trim() ||
+              expectedUsername.length > 128 || [...expectedUsername].length > 64) {
+            throw VALIDATION('Include the current username for this account.');
+          }
+          result = await db.rpc('workspace_admin_delete_account',{
+            p_user_id:user.id,p_account_id:accountId,p_expected_username:expectedUsername,
+            p_expected_role:expectedRole,p_expected_supervisor_id:expectedSupervisorId,
+            p_expected_team_id:expectedTeamId,p_expected_team_name:expectedTeamName,p_expected_member_ids:expectedMemberIds
+          });
+          break;
+        }
         case 'adminCreateAccount': {
           const {role,supervisorId} = body;
           validateAssignment(role,supervisorId);
@@ -350,7 +385,8 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
         }
         default: throw VALIDATION('Choose a supported action.');
       }
-      if (['adminCreateAccount','adminReviewSignup','adminAssignAccount','adminSaveTeam','adminAddTeamMembers','adminSaveTeamDetails'].includes(body.action)) {
+      if (['adminCreateAccount','adminReviewSignup','adminAssignAccount','adminSaveTeam','adminAddTeamMembers',
+        'adminSaveTeamDetails','adminDeleteTeam','adminDeleteAccount'].includes(body.action)) {
         if (result?.ok !== true) throw new ApiError(503,'STORAGE','Could not confirm this change. Refresh the directory to check its status.');
         return send(200,{ok:true});
       }

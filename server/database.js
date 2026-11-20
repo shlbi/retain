@@ -6,6 +6,15 @@ export class ApiError extends Error {
 /** Map only explicit domain error categories; hide Postgres diagnostics from clients. */
 export function databaseError(error, rpcName) {
   const category = typeof error?.message === 'string' ? error.message.split(':',1)[0] : '';
+  if (rpcName === 'workspace_admin_delete_team' || rpcName === 'workspace_admin_delete_account') {
+    const subject = rpcName === 'workspace_admin_delete_team' ? 'team' : 'account';
+    if (error?.code === 'PGRST202') return new ApiError(503,'SETUP','Apply the account and team deletion database update in Supabase, then refresh the admin page.');
+    if (category === 'CONFLICT') return new ApiError(409,'CONFLICT',`The ${subject} or its assignments changed. Refresh the directory and review the details before deleting.`);
+    if (category === 'FORBIDDEN') return new ApiError(403,'FORBIDDEN',subject === 'team'
+      ? 'Only admins can delete teams.' : 'Only admins can delete other agent or supervisor accounts.');
+    if (category === 'VALIDATION') return new ApiError(400,'VALIDATION',`Refresh the directory and select the ${subject} again.`);
+    return new ApiError(503,'STORAGE',`Storage could not confirm the ${subject} deletion. Refresh the directory to check its status before trying again.`);
+  }
   if (rpcName === 'workspace_admin_save_team_details') {
     if (error?.code === 'PGRST202') return new ApiError(503,'SETUP','Team editing needs the latest Teams database update. Apply it in Supabase, then reopen Teams.');
     if (category === 'TEAM_NAME_TAKEN') return new ApiError(409,'TEAM_NAME_TAKEN','That team name is already in use. Choose a different name.');
@@ -50,7 +59,7 @@ export function createDatabase(env = process.env, fetchImpl = globalThis.fetch) 
       try {
         response = await fetchImpl(new URL(`/rest/v1/rpc/${name}`,base), {method:'POST',headers,body:JSON.stringify(args),signal:AbortSignal.timeout(timeoutMs),cache:'no-store'});
         data = await response.json();
-      } catch { throw new ApiError(503,'STORAGE','Cloud storage could not confirm this operation. Try the same operation again.'); }
+      } catch { throw databaseError(null,name); }
       if (!response.ok) throw databaseError(data,name);
       return data;
     }

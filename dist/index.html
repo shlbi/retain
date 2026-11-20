@@ -206,13 +206,14 @@
               <div class="team-editor-footer">
                 <p id="team-save-error" class="team-error" role="alert"></p>
                 <button type="button" id="team-reload" class="text-button" hidden>Reload teams</button>
-                <div class="dialog-actions"><button type="button" id="team-cancel" class="button secondary">Cancel</button><button type="submit" id="team-save" class="button primary" disabled>Create team</button></div>
+                <div class="dialog-actions editor-actions"><button type="button" id="team-delete" class="delete-trigger" aria-haspopup="dialog" hidden>Delete team</button><button type="button" id="team-cancel" class="button secondary">Cancel</button><button type="submit" id="team-save" class="button primary" disabled>Create team</button></div>
               </div>
             </form>
           </dialog>
         </section>
         <section id="admin-accounts" aria-label="Accounts" hidden>
           <p id="accounts-status" class="accounts-status" role="status"></p>
+          <p id="accounts-error" class="team-error" role="alert"></p>
           <div class="accounts-layout">
             <section class="panel account-card account-requests" aria-labelledby="requests-title">
               <div class="account-card-heading"><h2 id="requests-title">Sign-up requests <span id="request-count" class="account-count" hidden></span></h2><button type="button" id="accounts-refresh" class="text-button">Refresh</button></div>
@@ -249,7 +250,8 @@
                 </div>
                 <p id="account-dialog-detail" class="account-hint"></p>
                 <p class="account-form-error" role="alert" hidden></p>
-                <div class="dialog-actions"><button type="button" id="account-dialog-cancel" class="button secondary">Cancel</button><button type="submit" id="account-dialog-submit" class="button primary">Save changes</button></div>
+                <div id="account-team-block" hidden><p id="account-team-block-message" class="account-hint"></p><button type="button" id="account-manage-teams" class="text-button">Manage teams</button></div>
+                <div class="dialog-actions editor-actions"><button type="button" id="account-delete" class="delete-trigger" aria-haspopup="dialog" hidden>Delete account</button><button type="button" id="account-dialog-cancel" class="button secondary">Cancel</button><button type="submit" id="account-dialog-submit" class="button primary">Save changes</button></div>
               </fieldset>
             </form>
           </dialog>
@@ -260,6 +262,13 @@
 
   <nav class="mobile-nav" aria-label="Mobile navigation"><button data-view="today" class="active"><span data-icon="overview"></span>Overview</button><button data-view="calls"><span data-icon="calls"></span>Call log</button><button data-view="goals" hidden><span data-icon="target"></span>Goals</button><button data-view="admin" hidden><span data-icon="layers"></span>Admin</button><button class="mobile-sign-out" data-action="sign-out" aria-label="Sign out of your account"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v16h4m5-12 4 4-4 4m-4-4h11"/></svg>Sign out</button></nav>
   <div class="toast" id="toast" role="status" hidden></div>
+  <dialog id="delete-confirm-dialog" role="alertdialog" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-description">
+    <div class="dialog-heading"><h2 id="delete-confirm-title"></h2></div>
+    <div class="dialog-body">
+      <p id="delete-confirm-description"></p>
+      <div class="dialog-actions"><button type="button" id="delete-confirm-cancel" class="button secondary">Cancel</button><button type="button" id="delete-confirm-submit" class="button danger"></button></div>
+    </div>
+  </dialog>
   <dialog id="detail-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
   </div>
 </body>

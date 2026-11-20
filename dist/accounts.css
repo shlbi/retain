@@ -73,7 +73,7 @@
 .teams-card .account-card-heading {flex-wrap:nowrap}
 .team-error {margin:0;padding:10px 12px;border-inline-start:3px solid #bf2538;border-radius:4px;background:#fff0f1;color:#95162a;font-size:14px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}
 .team-error:empty {position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%)}
-#teams-error:not(:empty),#team-save-error:not(:empty) {margin-bottom:12px}
+#teams-error:not(:empty),#accounts-error:not(:empty),#team-save-error:not(:empty) {margin-bottom:12px}
 .account-team {min-width:0;overflow-wrap:anywhere}
 .teams-list {margin:16px 0 0;padding:0;list-style:none}
 .teams-list:empty {margin:0}
@@ -119,3 +119,18 @@
 }
 .workspace-team-name,.game-team-name {margin:0;color:#23598d;font-weight:650;font-size:14px;overflow-wrap:anywhere}
 .workspace-team-name {padding:8px 12px}
+
+.editor-actions .delete-trigger {margin-inline-end:auto;min-height:40px;padding:8px 5px;background:transparent;color:#a11c31;font-size:14px;font-weight:600;border:0;border-radius:6px}
+.editor-actions .delete-trigger:hover {background:#fff0f1}
+dialog .button.danger {border:1px solid #a42135;background:#a42135;color:white}
+dialog .button.danger:hover {background:#86192b}
+#delete-confirm-dialog {max-width:440px}
+#delete-confirm-title {margin:0;line-height:1.4;overflow-wrap:anywhere}
+#delete-confirm-description {color:#405872;font-size:14px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}
+#delete-confirm-dialog .button {min-height:42px;font-size:14px}
+#account-dialog .account-form-error {background:#fff0f1;border-color:#bf2538;color:#95162a}
+#account-manage-teams {margin-top:4px}
+@media(max-width:380px) {
+  .editor-actions:has(.delete-trigger:not([hidden])) {display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .editor-actions .delete-trigger {grid-column:1/-1;justify-self:start}
+}
