@@ -20,12 +20,12 @@ test('repositories require a nonblank authenticated account before any request',
 });
 
 test('every aggregate read and mutation remains bound to its signed-in account',async()=>{
-  const remote=server((action,data)=>action==='state'?state:action==='tally'?{day,...data.delta}:data.value);
+  const remote=server((action,data)=>action==='state'?state:action==='tally'?{day,...data.delta}:data.replacement);
   const repository=createRepository('user-original',remote.request);
   assert.deepEqual(await repository.read(),state);
   assert.deepEqual(await repository.tally(day,delta,key),{day,...delta});
-  await repository.setGoal('orders',25);
-  assert.deepEqual(remote.requests.map(entry=>entry.action),['state','tally','goal']);
+  await repository.editDay(state.days[0],state.days[0]);
+  assert.deepEqual(remote.requests.map(entry=>entry.action),['state','tally','editDay']);
   assert.ok(remote.requests.every(entry=>entry.userId==='user-original'));
 });
 
@@ -66,7 +66,7 @@ test('offline requests fail explicitly without reading or writing browser storag
 test('closing a repository blocks all authenticated operations',async()=>{
   const remote=server(()=>{throw new Error('Unexpected request.');});
   const repository=createRepository('user-1',remote.request);repository.close();repository.close();
-  for(const operation of [()=>repository.read(),()=>repository.tally(day,delta,key),()=>repository.setGoal('sales',25)])await assert.rejects(operation(),{code:'AUTH'});
+  for(const operation of [()=>repository.read(),()=>repository.tally(day,delta,key),()=>repository.editDay(state.days[0],state.days[0])])await assert.rejects(operation(),{code:'AUTH'});
   assert.equal(remote.requests.length,0);
 });
 

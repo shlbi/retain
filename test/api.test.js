@@ -162,7 +162,7 @@ test('state returns eleven validated goals and logout revokes the token digest',
 test('only daily counters and canonical grouped tags reach the aggregate RPC',async()=>{
   const db=fakeDatabase(),handler=createHandler({env:ENV,database:db}),cookie=session();
   assert.deepEqual((await request(handler,{body:tally,cookie})).body,{day,...delta});
-  assert.deepEqual(db.calls.at(-1),{name:'workspace_tally',args:{p_user_id:USER_A.id,p_day:day,p_delta:delta,p_request_id:requestId}});
+  assert.deepEqual(db.calls.find(call=>call.name==='workspace_tally'),{name:'workspace_tally',args:{p_user_id:USER_A.id,p_day:day,p_delta:delta,p_request_id:requestId}});
   for (const body of [
     {action:'save',call:{account:'1234'}}, {action:'restore',call:{}}, {action:'remove'}, {action:'import',backup:{}},
     {...tally,notes:'free text'}, {...tally,day:'2026-11-99'}, {...tally,requestId:'customer-id'},
@@ -224,4 +224,19 @@ test('history edits use session ownership and reject different report dates',asy
   assert.equal(invalid.status,400);
   const wrongUser=await request(handler,{cookie:session(),expected:USER_B.id,body:{action:'editDay',expected,replacement}});
   assert.equal(wrongUser.status,401);
+});
+
+test('team and games actions bind access to the signed-in actor',async()=>{
+  const db=fakeDatabase(), cookie=session(), handler=createHandler({env:ENV,database:db});
+  for (const [action,rpc] of [['teamContext','workspace_team_context'],['adminStats','workspace_admin_stats'],['gameState','workspace_game_state']]) {
+    const route={method:'GET',url:'/api/workspace?action='+action};
+    assert.equal((await request(handler,route)).status,401);
+    assert.equal((await request(handler,{...route,cookie})).status,200);
+    assert.deepEqual(db.calls.find(c=>c.name===rpc).args,{p_user_id:USER_A.id});
+  }
+  assert.equal((await request(handler,{cookie,body:{action:'goal',key:'sales',value:50}})).status,403);
+  const goals={sales:25};
+  await request(handler,{cookie,body:{action:'teamGoals',agentIds:[USER_B.id],goals}});
+  assert.deepEqual(db.calls.find(c=>c.name==='workspace_team_goals').args,{p_user_id:USER_A.id,p_agent_ids:[USER_B.id],p_goals:goals});
+  assert.ok(db.calls.some(c=>c.name==='workspace_record_request'));
 });

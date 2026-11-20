@@ -58,7 +58,6 @@ export function createRepository(userId, request = apiRequest) {
       if (previous.day !== next.day) throw new StorageError('VALIDATION','Choose the same report date.');
       return validateDayTotals(await call('editDay',{expected:previous,replacement:next}));
     },
-    setGoal(key,value) { return call('goal',{key,value}); },
     close() { closed = true; }
   };
 }

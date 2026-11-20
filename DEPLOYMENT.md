@@ -59,4 +59,30 @@ Production history resides in Supabase. A browser refresh before submitting disc
 
 History editing requires migration `20261113230000_edit_grouped_history.sql`. If the GitHub integration has not applied it, run the entire [enable-history-edit.sql](scripts/enable-history-edit.sql) file in the Supabase SQL Editor. The script installs the edit function once, records the matching migration version and returns `editing_ready = true`.
 
-The API uses expiring sessions, salted password hashes, rate limits and atomic per-user database operations. The app has no email password-reset or administrative interface. Manage database backups and trusted operator access in Supabase. Keep server keys out of the frontend and source control.
+The API uses expiring sessions, salted password hashes, rate limits and atomic per-user database operations. Admin reporting is available to trusted admin accounts. Manage database backups and trusted operator access in Supabase. Keep server keys out of the frontend and source control.
+
+
+## Team setup and permissions
+
+Apply `20261120005722_team_roles.sql`, `20261120005738_team_bingo.sql` and `20261120010012_bingo_realtime.sql` in order. Existing accounts and new signups start as agents. The web app derives roles from the signed-in account. Only a Supabase operator can change roles or team membership.
+
+In the SQL Editor, look up the exact existing tracker usernames and confirm their UUIDs. Substitute those verified UUIDs for the placeholders below. Run only the statements needed for the assignment. The dashboard and games pick up new assignments after a refresh.
+
+```sql
+-- Promote the chosen team leader. A supervisor cannot report to another supervisor.
+update workspace_private.users set role='supervisor', supervisor_id=null
+where id='<supervisor-uuid>'::uuid returning username, role;
+
+-- Assign a player. Admins participate in their supervisor's game as players.
+update workspace_private.users set supervisor_id='<supervisor-uuid>'::uuid
+where id='<player-uuid>'::uuid and role in ('agent','admin')
+returning username, role, supervisor_id;
+
+-- Restrict this operation to a verified owner account.
+update workspace_private.users set role='admin'
+where id='<owner-uuid>'::uuid returning username, role;
+```
+
+Moving a player to another supervisor changes their dashboard access and game roster. Reassign a supervisor's members before changing the supervisor's role. The server binds every team RPC to the session user, and the database checks the actor's role and team membership for each privileged operation. Test team isolation using two separate test teams, including an attempt to assign goals across teams.
+
+For cross-device game updates, the browser subscribes to an opaque Supabase Broadcast topic for its team. Messages contain an empty refresh signal. Each client reloads standings through the session-bound workspace endpoint. Removing or transferring a member rotates the old team's topic. The hosted project uses its publishable key for this socket. To rotate it or point the deployment at another hosted project, set `SUPABASE_PUBLISHABLE_KEY` to an enabled `sb_publishable_` key for `SUPABASE_URL` and redeploy. Server credentials stay in the server adapter. Live games fall back to polling during a socket outage.

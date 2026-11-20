@@ -5,13 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#2563a6">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss://*.supabase.co/realtime/v1/websocket; object-src 'none'; base-uri 'self'; form-action 'none'">
   <meta name="description" content="Track customer saves, service disconnects, mobile sales, and daily goals.">
   <title>Call workspace</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="tally-history.css">
   <link rel="stylesheet" href="entry.css">
+  <link rel="stylesheet" href="team.css">
+  <link rel="stylesheet" href="games.css">
   <link rel="stylesheet" href="auth.css">
   <script type="module" src="app.js"></script>
 </head>
@@ -54,10 +56,14 @@
   <a class="skip-link" href="#main">Skip to content</a>
   <aside class="sidebar">
     <div class="workspace-label">YOUR WORKSPACE</div>
+    <label id="team-picker" class="team-picker" hidden>Team member
+      <select id="team-agent" aria-label="Choose an agent"><option value="">No agents assigned</option></select>
+    </label>
     <nav class="desktop-nav" aria-label="Main navigation">
       <button data-view="today" class="nav-item active" aria-label="Overview" title="Overview"><span data-icon="overview"></span>Overview</button>
       <button data-view="calls" class="nav-item" aria-label="Call log" title="Call log"><span data-icon="calls"></span>Call log<span id="nav-count" class="nav-count">0</span></button>
-      <button data-view="goals" class="nav-item" aria-label="Daily goals" title="Daily goals"><span data-icon="target"></span>Daily goals</button>
+      <button data-view="goals" class="nav-item" aria-label="Goals" title="Goals" hidden><span data-icon="target"></span>Goals</button>
+      <button data-view="admin" class="nav-item" aria-label="Admin" title="Admin" hidden><span data-icon="layers"></span>Admin</button>
     </nav>
     <div class="sidebar-bottom">
       <div class="demo-note"><span class="tiny-dot"></span>Saved to your account<p>Your calls and goals stay with you, across devices.</p></div>
@@ -82,7 +88,7 @@
         <div class="summary-strip" id="summary-strip" aria-label="Today's call summary"></div>
         <div class="overview-grid">
           <section class="goals-panel panel" aria-labelledby="goals-title">
-            <div class="panel-heading"><div><h2 id="goals-title"><span id="goals-day-label">Today’s goals</span> <span class="info-trigger"><button class="icon-button small" data-action="help" aria-label="About goal calculations"><span data-icon="info"></span></button></span></h2><p>Small wins. Full circles.</p></div><button class="text-button" data-view="goals">Edit goals <span data-icon="arrow-up-right"></span></button></div>
+            <div class="panel-heading"><div><h2 id="goals-title"><span id="goals-day-label">Today’s goals</span> <span class="info-trigger"><button class="icon-button small" data-action="help" aria-label="About goal calculations"><span data-icon="info"></span></button></span></h2><p>Small wins. Full circles.</p></div><button class="text-button" data-view="goals" hidden>Team goals <span data-icon="arrow-up-right"></span></button></div>
             <div class="rings-grid" id="rings-grid"></div>
             <div class="goal-footer"><span id="goals-reached"></span><span>Daily progress · History retained</span></div>
           </section>
@@ -103,8 +109,8 @@
                 <details class="added-services" id="added-services-section" hidden><summary>Services added <span id="added-count"></span></summary><div id="added-services" class="added-options" role="group" aria-label="Services added during this call"></div></details>
                 <button type="button" class="text-button add-an-account" data-action="add-account"><span data-icon="plus"></span>Add another account</button>
                 <section class="mobile-orders-section" aria-labelledby="mobile-orders-title">
-                  <div class="mobile-orders-heading"><span class="sale-icon" data-icon="mobile"></span><div><h3 id="mobile-orders-title">Mobile orders</h3><p>1–12 lines per order, across this call.</p></div></div>
-                  <p class="order-service-note">Add orders for the selected account. Each order can include 1–12 mobiles.</p>
+                  <div class="mobile-orders-heading"><span class="sale-icon" data-icon="mobile"></span><div><h3 id="mobile-orders-title">Mobile orders</h3><p>1–12 lines per order on this account.</p></div></div>
+                  <p class="order-service-note">A first mobile order adds Mobile to this account automatically.</p>
                   <div id="mobile-orders" class="mobile-orders"></div>
                   <button class="button secondary add-order" type="button" data-action="add-order"><span data-icon="plus"></span>Add mobile order</button>
                 </section>
@@ -122,11 +128,40 @@
 
       <section id="view-calls" class="view" hidden><div class="panel"><div class="call-toolbar"><button class="text-button all-history-btn" data-action="all-history" aria-pressed="false">All dates</button><div class="filter-tabs" id="call-filters" aria-label="Filter calls"><button data-filter="all" class="active">All outcomes</button><button data-filter="saved">Saves</button><button data-filter="disconnected">Disconnects</button><button data-filter="downgrade">Downgrades</button><button data-filter="wash">Wash</button><button data-filter="mobile">Mobile sold</button></div><button class="button secondary export-button" data-action="export"><span data-icon="download"></span>Export CSV</button></div><div id="all-calls"></div><div class="table-footer" id="table-footer"></div><div class="pagination" id="pagination"></div></div></section>
 
-      <section id="view-goals" class="view" hidden><div class="goals-settings panel"><div class="panel-heading"><div><h2>Make the goals yours</h2><p>Set the targets used for every report date.</p></div><span class="autosave-badge" id="goal-save-status">Starting targets</span></div><div id="goal-settings"></div><div class="settings-footer"><p>Goals change the rings, never your call outcomes.</p></div></div></section>
+      <section id="view-goals" class="view" hidden>
+        <form class="panel team-goals" id="team-goals-form">
+          <fieldset>
+            <legend>Set a goal</legend>
+            <div class="goal-fields">
+              <label>Metric<select id="target-metric"></select></label>
+              <label>Goal (%)<input id="target-value" type="number" min="5" max="100" step="1" required></label>
+            </div>
+            <p class="team-secondary" id="current-target"></p>
+            <fieldset class="goal-audience">
+              <legend>Apply to</legend>
+              <label><input type="radio" name="audience" value="all" checked>Whole team</label>
+              <label><input type="radio" name="audience" value="selected">Selected agents</label>
+            </fieldset>
+            <div id="target-agent-list" class="target-agent-list" hidden></div>
+            <button type="submit" class="button primary" id="apply-team-goal">Apply goal</button>
+            <p id="team-goal-status" role="status" class="team-secondary"></p>
+          </fieldset>
+        </form>
+      </section>
+      <section id="view-admin" class="view" hidden>
+        <p id="admin-status" class="team-secondary" role="status"></p>
+        <button id="refresh-admin" class="text-button">Refresh report</button>
+        <div id="admin-report" hidden>
+          <div class="admin-cards" id="admin-summary"></div>
+          <section class="panel admin-panel"><h2>Performance over time</h2><p>Compare the last two 14-day periods using logged outcomes.</p><div id="admin-trend"></div></section>
+          <section class="panel admin-panel"><h2>Team results</h2><p>Totals use current team assignments.</p><div id="admin-team-table"></div></section>
+          <section class="panel admin-panel"><h2>Technical performance</h2><div class="admin-cards technical-cards" id="admin-technical"></div></section>
+        </div>
+      </section>
     </main>
   </div>
 
-  <nav class="mobile-nav" aria-label="Mobile navigation"><button data-view="today" class="active"><span data-icon="overview"></span>Overview</button><button data-view="calls"><span data-icon="calls"></span>Call log</button><button data-view="goals"><span data-icon="target"></span>Goals</button><button class="mobile-sign-out" data-action="sign-out" aria-label="Sign out of your account"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v16h4m5-12 4 4-4 4m-4-4h11"/></svg>Sign out</button></nav>
+  <nav class="mobile-nav" aria-label="Mobile navigation"><button data-view="today" class="active"><span data-icon="overview"></span>Overview</button><button data-view="calls"><span data-icon="calls"></span>Call log</button><button data-view="goals" hidden><span data-icon="target"></span>Goals</button><button data-view="admin" hidden><span data-icon="layers"></span>Admin</button><button class="mobile-sign-out" data-action="sign-out" aria-label="Sign out of your account"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v16h4m5-12 4 4-4 4m-4-4h11"/></svg>Sign out</button></nav>
   <div class="toast" id="toast" role="status" hidden></div>
   <dialog id="detail-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
   </div>

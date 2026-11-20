@@ -1,0 +1,33 @@
+.team-picker {display:grid; gap:6px; margin:16px 7px 12px; color:#435775; font-size:12px; font-weight:600}
+.team-picker select, .goal-fields select, .goal-fields input {border:1px solid #cbd9e9; color:#183b66; background:white; border-radius:8px; min-height:42px; padding:7px 10px; font:inherit; min-width:0}
+.team-picker select {width:100%}
+#workspace-view [hidden] {display:none!important}
+#workspace-view.supervising .overview-grid {grid-template-columns:minmax(0,1fr)}
+.team-goals {max-width:680px; padding:clamp(20px,4vw,36px)}
+.team-goals fieldset {border:0;padding:0;margin:0;min-width:0}
+.team-goals legend, .admin-panel h2 {font-size:18px;font-weight:650;color:#203953;margin:0 0 20px}
+.goal-fields {display:grid;grid-template-columns:minmax(0,2fr) minmax(90px,1fr);gap:14px}
+.goal-fields label {display:grid;gap:6px;font-size:13px;color:#294360}
+.team-secondary,.admin-panel p {color:#526881;font-size:13px;line-height:1.5}
+.team-goals .goal-audience {margin:28px 0 18px}
+.goal-audience legend {font-size:14px;margin-bottom:10px}
+.goal-audience label,.target-agent-list label {display:inline-flex;align-items:center;gap:8px;padding:8px 14px 8px 0;font-size:14px}
+.goal-audience input,.target-agent-list input {accent-color:#2563a6}
+.target-agent-list {margin:0 0 18px; display:flex; flex-wrap:wrap; gap:8px}
+.target-agent-list label {padding:8px 12px;border:1px solid #d9e4ef;border-radius:6px;word-break:break-word}
+#admin-report {display:grid;gap:18px;margin-top:16px}
+.admin-cards {display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.admin-card {display:grid;align-content:start;gap:8px;border:1px solid #dce6f0;border-radius:12px;background:white;padding:18px}
+.admin-card span {color:#445e7c;font-size:13px}
+.admin-card strong {font-size:clamp(23px,3vw,35px);line-height:1.1;color:#143b68;font-variant-numeric:tabular-nums}
+.admin-card small {color:#506681;font-size:12px}
+.admin-panel {padding:clamp(16px,3vw,28px);min-width:0}
+.admin-panel h2 {margin-bottom:6px}
+.admin-panel p {margin:0 0 15px}
+.admin-table-wrap {overflow:auto}
+.admin-table {border-collapse:collapse;width:100%;text-align:left;font-size:14px}
+.admin-table th,.admin-table td {padding:11px 10px;border-bottom:1px solid #e3ebf3;white-space:nowrap;font-variant-numeric:tabular-nums}
+.admin-table th {font-weight:600}
+.admin-table thead {background:#f4f7fb}
+.technical-cards {margin-top:16px}
+@media(max-width:400px){.admin-cards {grid-template-columns:1fr 1fr}.admin-card {padding:12px}}

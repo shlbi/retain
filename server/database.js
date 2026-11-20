@@ -8,6 +8,7 @@ export function databaseError(error) {
   const category = typeof error?.message === 'string' ? error.message.split(':',1)[0] : '';
   if (category === 'DUPLICATE' || error?.code === '23505') return new ApiError(409,'DUPLICATE','That username already exists.');
   if (category === 'CONFLICT') return new ApiError(409,'CONFLICT','These records changed or conflict with existing records. Reload the latest records before trying again. No conflicting changes were applied.');
+  if (category === 'FORBIDDEN') return new ApiError(403,'FORBIDDEN','Your role or team assignment does not allow this action.');
   if (category === 'LIMIT') return new ApiError(400,'VALIDATION','This workspace has reached its storage capacity.');
   if (category === 'VALIDATION') return new ApiError(400,'VALIDATION','The supplied record or target is invalid, or the workspace storage limit would be exceeded. No changes were applied.');
   return new ApiError(503,'STORAGE','Cloud storage could not confirm this operation. Try the same operation again.');
@@ -26,11 +27,11 @@ export function createDatabase(env = process.env, fetchImpl = globalThis.fetch) 
   // New sb_secret keys are opaque API keys, not JWT bearer tokens.
   if (!key.startsWith('sb_secret_')) headers.Authorization = `Bearer ${key}`;
   return {
-    async rpc(name, args = {}) {
+    async rpc(name, args = {}, timeoutMs = 15000) {
       if (!/^[a-z][a-z0-9_]*$/.test(name)) throw new ApiError(503,'STORAGE','Invalid server database operation.');
       let response, data;
       try {
-        response = await fetchImpl(new URL(`/rest/v1/rpc/${name}`,base), {method:'POST',headers,body:JSON.stringify(args),signal:AbortSignal.timeout(15000),cache:'no-store'});
+        response = await fetchImpl(new URL(`/rest/v1/rpc/${name}`,base), {method:'POST',headers,body:JSON.stringify(args),signal:AbortSignal.timeout(timeoutMs),cache:'no-store'});
         data = await response.json();
       } catch { throw new ApiError(503,'STORAGE','Cloud storage could not confirm this operation. Try the same operation again.'); }
       if (!response.ok) throw databaseError(data);

@@ -24,7 +24,7 @@ A **wash** pairs two accounts on the same call that started with exactly the sam
 
 Each mobile order contains **1–12 mobiles**. A call can contain multiple orders. Across ten calls, one order for three mobiles gives a **10% order rate** and a **30% line rate**. Every call contributes once to each sales denominator, including calls with several customer accounts or a wash. Use **Mobile orders** on the selected account. If that account started without Mobile, its first order earns one mobile service save. Orders on an account that started with Mobile count toward sales, and its kept or disconnected choice determines mobile retention credit.
 
-Daily reports use Eastern time. Each ring shows progress against its editable goal.
+Daily reports use Eastern time. Each ring shows progress against the goal assigned by the supervisor.
 
 ### Grouped history
 
@@ -49,6 +49,28 @@ Each submission includes a random retry token so retrying the same submission ca
 Create a separate tracker username and password. Each can contain 1–8 characters. Usernames cannot start with a digit, `p` or `P`. Existing accounts can continue to sign in with their original credentials.
 
 The app uses its own username/password accounts and an HttpOnly session cookie. Passwords are salted and hashed with scrypt. The server connects to the private database through same-origin Vercel functions. Database credentials stay on the server.
+
+## Team workspaces
+
+| Role | Workspace |
+| --- | --- |
+| Agent | Log calls, correct personal history, view assigned goals and play the assigned team's game. |
+| Supervisor | Select a team member in the sidebar to view that person's percentages and call log. In **Goals**, choose a metric and apply its target to the whole current roster or selected agents. In **Games**, schedule team bingo and see player progress. |
+| Admin | Use the personal agent workspace, participate in an assigned team's game and open **Admin** for app-wide reporting. |
+
+Signups create agent accounts. A database operator assigns supervisors and team memberships as described in the deployment guide. An agent can belong to one supervisor. Public signup never grants a privileged role.
+
+### Team bingo
+
+Open **Games** to see the current board. A supervisor sets the incentive, start and end in local time, and a metric and target for each of nine squares. Choose a line (horizontal, vertical or diagonal) or blackout (all nine). A team can schedule multiple games with nonoverlapping time windows. The first confirmed submission of a tally scores once when its Eastern report date matches today and the server receives it during the game. Historical corrections update reporting independently because grouped history does not identify the time of each call. A wash contributes calls and any eligible additions or sales under the existing scoring rules.
+
+The compact leaderboard shows three players and the signed-in player's rank. A Supabase Realtime signal refreshes standings across devices after a new score. If the socket is unavailable, active games refresh every five seconds while the page is visible. Players who reach the winning pattern rank first, then players are ranked by completed squares. Ties share rank. Supervisors can expand each player's totals. The sidebar can be collapsed, and the game drawer takes half the desktop or the available width on a phone.
+
+### Admin report
+
+Admin shows the last 28 Eastern reporting dates, with the latest 14 compared against the preceding 14. Team results use current roster membership. Overall save rate divides saved calls by eligible calls. Mobile orders per 100 calls counts orders, while mobiles sold counts lines. Active agents are agents or admins who logged calls. These are observed changes in logged work. Establishing a causal effect would require a comparison group or another evaluation design.
+
+Technical reporting counts authenticated workspace API requests, HTTP 5xx responses and mean server handling time before telemetry. Totals started when this release was installed. A database outage can prevent a measurement from being recorded.
 
 ## Setup
 

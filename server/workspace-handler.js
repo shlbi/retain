@@ -2,9 +2,16 @@ import { DEFAULT_GOALS } from '../dist/model.js';
 import { StorageError } from '../dist/validation.js';
 import { validateDayTotals, validateTallyState, validateTallyUpdate } from '../dist/tally-validation.js';
 import { credentials, hashPassword, verifyPassword, tokenHash, newSession, sessionToken, sessionCookie, SESSION_SECONDS } from './auth.js';
+import { gameConnection } from './game-connection.js';
 import { ApiError, createDatabase } from './database.js';
 
-const ACTION_FIELDS = {signup:['username','password'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value'],editDay:['expected','replacement']};
+const ACTION_FIELDS = {signup:['username','password'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value'],editDay:['expected','replacement'],
+  agentState:['agentId'],teamGoals:['agentIds','goals'],gameSchedule:['title','incentive','startsAt','endsAt','pattern','squares']};
+const READ_ACTIONS = {
+  state:'workspace_tally_state', teamContext:'workspace_team_context',
+  adminStats:'workspace_admin_stats', gameState:'workspace_game_state'
+};
+const isUuid = value => typeof value === 'string' && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
 export const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const VALIDATION = message => new ApiError(400,'VALIDATION',message);
 
@@ -89,7 +96,20 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Referrer-Policy','no-referrer');
     res.setHeader('Vary','Cookie, X-Workspace-User');
-    const send = (status,value) => { res.statusCode = status; res.end(JSON.stringify(value)); };
+    let metricsDatabase;
+    const started = performance.now();
+    // Count authenticated workspace requests only. The monitoring write has its own
+    // short timeout and cannot turn a committed save into a failed response.
+    const send = async (status,value) => {
+      if (metricsDatabase) {
+        const elapsed = Math.round(performance.now() - started);
+        try {
+          await metricsDatabase.rpc('workspace_record_request',{p_failed:status >= 500,p_elapsed_ms:elapsed},1000);
+        } catch { /* Telemetry may be unavailable during a database outage. */ }
+      }
+      res.statusCode = status;
+      res.end(JSON.stringify(value));
+    };
     try {
       if (!['GET','POST'].includes(req.method)) { res.setHeader('Allow','GET, POST'); throw new ApiError(405,'METHOD','Use GET or POST for this endpoint.'); }
       let body;
@@ -123,14 +143,20 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
         return send(200,{ok:true});
       }
       const user = await currentUser(db,req);
+      let action;
       if (req.method === 'GET') {
-        const action = new URL(req.url || '/api/workspace','http://localhost').searchParams.get('action');
+        action = new URL(req.url || '/api/workspace','http://localhost').searchParams.get('action');
         if (!action) return send(200,{user});
-        if (action !== 'state') throw VALIDATION('Choose a supported action.');
+        if (!Object.hasOwn(READ_ACTIONS,action)) throw VALIDATION('Choose a supported action.');
       }
       if (!user) throw new ApiError(401,'AUTH','Sign in to open your saved records.');
       if (header(req,'x-workspace-user') !== user.id) throw new ApiError(401,'AUTH','Your session changed. Sign in again.');
-      if (req.method === 'GET') return send(200,safeResult(await db.rpc('workspace_tally_state',{p_user_id:user.id}),validateTallyState));
+      metricsDatabase = db;
+      if (req.method === 'GET') {
+        const data = await db.rpc(READ_ACTIONS[action],{p_user_id:user.id});
+        if (action === 'gameState') return send(200,gameConnection(data,env));
+        return send(200,action === 'state' ? safeResult(data,validateTallyState) : data);
+      }
       let result;
       switch (body.action) {
         case 'tally': {
@@ -148,10 +174,25 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
           if (result.day !== expected.day) throw new ApiError(503,'STORAGE','Could not confirm the edited day.');
           break;
         }
-        case 'goal': {
-          if (!Object.hasOwn(DEFAULT_GOALS,body.key) || !Number.isInteger(body.value) || body.value < 5 || body.value > 100) throw VALIDATION('Choose a known goal and a whole percentage from 5 to 100.');
-          result = await db.rpc('workspace_goal',{p_user_id:user.id,p_key:body.key,p_value:body.value});
-          if (result !== body.value) throw new ApiError(503,'STORAGE','Could not confirm the saved target.');
+        case 'goal':
+          throw new ApiError(403,'FORBIDDEN','A supervisor sets goals for the team.');
+        case 'agentState':
+          if (!isUuid(body.agentId)) throw VALIDATION('Choose an agent.');
+          result = safeResult(await db.rpc('workspace_agent_state',{p_user_id:user.id,p_agent_id:body.agentId}),validateTallyState);
+          break;
+        case 'teamGoals': {
+          const {agentIds,goals} = body;
+          if (agentIds !== null && (!Array.isArray(agentIds) || !agentIds.length || !agentIds.every(isUuid))) throw VALIDATION('Choose the team or selected agents.');
+          if (!goals || typeof goals !== 'object' || Array.isArray(goals) || !Object.keys(goals).length ||
+              Object.entries(goals).some(([key,v]) => !Object.hasOwn(DEFAULT_GOALS,key) || !Number.isInteger(v) || v<5 || v>100)) {
+            throw VALIDATION('Choose a goal and a whole percentage from 5 to 100.');
+          }
+          result = await db.rpc('workspace_team_goals',{p_user_id:user.id,p_agent_ids:agentIds,p_goals:goals});
+          break;
+        }
+        case 'gameSchedule': {
+          const {action:unused,...game} = body;
+          result = await db.rpc('workspace_launch_game',{p_user_id:user.id,p_game:game});
           break;
         }
         default: throw VALIDATION('Choose a supported action.');

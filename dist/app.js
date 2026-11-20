@@ -4,6 +4,9 @@ import { createTallyEntry } from './entry-tally.js';
 import { groupedRows, groupedTable, groupedCsv } from './tally-history.js';
 import { openStore, apiRequest, validDay } from './storage.js';
 import { historyEditor, readHistoryEditor, outcomeEditor } from './history-editor.js';
+import { createGames } from './games.js';
+import { createTeamGoals, displayAdminStats, displayRoster } from './team.js';
+import { validateTallyState } from './tally-validation.js';
 import { signupRules } from './signup-rules.js';
 
 const paths = {
@@ -36,6 +39,23 @@ let repo, ready=false, busy=false, view='today', filter='all', page=0, allHistor
 let selectedDay=dayKey(), previousDay=selectedDay, lastFocus=null, toastTimer;
 let sessionUser=null, authMode='login', authBusy=false, sessionEpoch=0, sessionRequest=0, authenticating=false;
 let pendingRead=null;
+let requestedView = location.hash.slice(1);
+const games = createGames({apiRequest});
+let teamContext = {role:'agent',agents:[]}, selectedAgentId = '', adminRequest = 0;
+const teamGoals = createTeamGoals(async (agentIds,goals) => {
+  if (teamContext.role !== 'supervisor' || !sessionUser) throw new Error('Only supervisors can assign goals.');
+  const actor = sessionUser.id;
+  const result = await apiRequest('teamGoals',{agentIds,goals},actor);
+  if (sessionUser?.id === actor) {
+    pendingRead = null;
+    await syncFromStorage();
+  }
+  return result;
+});
+const watchingTeam = () => teamContext.role === 'supervisor';
+const canLog = () => !!sessionUser && !watchingTeam();
+const selectedAgent = () => teamContext.agents.find(agent => agent.id === selectedAgentId);
+
 const entry = createTallyEntry({submit:submitTally, onClose:closeEntry, icon});
 
 const PAGE_SIZE=50;
@@ -64,14 +84,12 @@ function countLabel(m) {
 /** Keep all write controls locked until storage is ready or a transaction finishes. */
 function setBusy(value) {
   busy = value;
-  entry.busy(value || !ready);
-  document.querySelectorAll('[data-goal],[data-goal-slider]').forEach(node => node.disabled = value || !ready);
-  $('goal-save-status').textContent = value ? 'Saving…' : ready ? 'Saved to your account' : 'Storage not ready';
+  entry.busy(value || !ready || !canLog());
 }
 /** Display a lasting storage error rather than falsely claiming a save succeeded. */
 function storageError(message){$('storage-banner').textContent=message;$('storage-banner').hidden=false;$('storage-status').textContent='Storage needs attention';}
 async function writeToStore(operation) {
-  if (!ready || busy || !repo) throw new Error('Cloud storage is unavailable. Try again when connected.');
+  if (!canLog() || !ready || busy || !repo) throw new Error('Cloud storage is unavailable. Try again when connected.');
   const epoch = sessionEpoch;
   pendingRead = null;
   setBusy(true);
@@ -93,6 +111,7 @@ async function submitTally(draft, token, day) {
   state.days = [...state.days.filter(item => item.day !== updated.day), updated];
   selectedDay = updated.day;
   renderDashboard();
+  games.refresh();
   showToast('Daily tally saved');
 }
 
@@ -115,43 +134,99 @@ function renderCallLog() {
   const filtered = historyRows();
 
   const pages=Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));page=Math.min(page,pages-1);
-  $('all-calls').innerHTML=groupedTable(filtered.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE), {showDate:allHistory,editable:true});
+  $('all-calls').innerHTML=groupedTable(filtered.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE), {showDate:allHistory,editable:canLog() && ready});
   $('table-footer').textContent=`${filtered.length} outcome group${filtered.length===1?'':'s'} · ${allHistory?'All dates':selectedDay}`;
   $('pagination').innerHTML=pages>1?`<button class="button secondary" data-action="previous-page" ${page===0?'disabled':''}>Previous</button><span>Page ${page+1} of ${pages}</span><button class="button secondary" data-action="next-page" ${page===pages-1?'disabled':''}>Next</button>`:'';
   document.querySelectorAll('[data-filter]').forEach(el=>{el.classList.toggle('active',el.dataset.filter===filter);el.setAttribute('aria-pressed',String(el.dataset.filter===filter));});
   document.querySelector('[data-action="all-history"]').setAttribute('aria-pressed',String(allHistory));
 }
 
-/** Render tap-based goal controls; persist only settled range changes. */
-function renderGoals(){
-  $('goal-settings').innerHTML=METRICS.map(m=>`<div class="goal-setting" data-goal-row="${m.key}" style="--ring-color:${m.color}"><span class="goal-setting-icon">${icon(m.icon)}</span><div class="goal-setting-info"><strong>${m.label}</strong><small>${m.description}</small></div><input class="goal-slider" type="range" min="5" max="100" step="1" value="${state.goals[m.key]}" data-goal-slider="${m.key}" aria-label="${m.label} goal percentage"><div class="goal-stepper"><button data-goal="${m.key}" data-delta="-5" aria-label="Lower ${m.label} goal by 5 percent">${icon('minus')}</button><strong>${state.goals[m.key]}%</strong><button data-goal="${m.key}" data-delta="5" aria-label="Raise ${m.label} goal by 5 percent">${icon('plus')}</button></div></div>`).join('');
+/** Drop private report data on logout or when a role is withdrawn mid-session. */
+function clearAdminReport() {
+  adminRequest++;
+  $('admin-report').hidden = true;
+  $('admin-status').textContent = '';
+  for (const id of ['admin-summary','admin-trend','admin-team-table','admin-technical']) $(id).replaceChildren();
 }
-/** Save one goal atomically, restoring committed values after errors and keyboard focus after rendering. */
-async function setGoal(key, value) {
-  if (!ready || busy) return;
-  const goal = Math.max(5, Math.min(100, Number(value)));
-  try {
-    await writeToStore(source => source.setGoal(key, goal));
-    state.goals[key] = goal;
+function applyRole(context) {
+  const oldRole = teamContext.role, oldAgent = selectedAgentId;
+  if (oldRole === 'admin' && context.role !== 'admin') clearAdminReport();
+  if (oldRole === 'supervisor' && context.role !== 'supervisor') teamGoals.reset();
+  teamContext = context;
+  if (sessionUser) games.openSession(sessionUser,context.role);
+  if (!selectedAgent()) selectedAgentId = context.agents[0]?.id || '';
+  const supervisor = watchingTeam(), admin = context.role === 'admin';
+  $('workspace-view').classList.toggle('supervising',supervisor);
+  $('team-picker').hidden = !supervisor;
+  displayRoster(context.agents,selectedAgentId);
+  teamGoals.update(context.agents);
+  document.querySelector('.entry-column').hidden = supervisor;
+  document.querySelectorAll('[data-view="goals"]').forEach(button => button.hidden = !supervisor);
+  document.querySelectorAll('[data-view="admin"]').forEach(button => button.hidden = !admin);
+  if (oldRole !== context.role || oldAgent !== selectedAgentId) {
+    ready = false;
+    state = emptyState();
+    $('detail-dialog').close();
+    closeEntry();
     renderDashboard();
-    $('goal-save-status').textContent = 'Saved to your account';
-  } catch (error) {
-    storageError(error.message);
+    setView(view,false);
   }
-  const focused = document.activeElement;
-  renderGoals();
-  if (focused?.dataset.goalSlider === key) document.querySelector(`[data-goal-slider="${key}"]`)?.focus({preventScroll:true});
 }
-/** Change application sections while preserving the unfinished call. */
-function setView(next,scroll=true){view=['today','calls','goals'].includes(next)?next:'today';for(const name of ['today','calls','goals'])$('view-'+name).hidden=view!==name;
- document.querySelectorAll('.desktop-nav [data-view],.mobile-nav [data-view]').forEach(el=>{el.classList.toggle('active',el.dataset.view===view);if(el.dataset.view===view)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
- const titles={today:['Overview','Your day, at a glance.','Every conversation counts. See how yours add up.'],calls:['Call log','Your call log.','Daily counts by outcome and service.'],goals:['Daily goals','Daily goals.','Set the targets for your daily report.']};
- $('breadcrumb-label').textContent=titles[view][0];$('page-title').textContent=titles[view][1];$('page-description').textContent=titles[view][2];document.querySelector('.date-control').hidden=view==='goals';history.replaceState(null,'','#'+view);if(scroll)window.scrollTo({top:0,behavior:'instant'});
+function setView(next,scroll=true) {
+  if (scroll) requestedView = null;
+  const previous = view;
+  const allowed = ['today','calls'];
+  if (watchingTeam()) allowed.push('goals');
+  if (teamContext.role === 'admin') allowed.push('admin');
+  view = allowed.includes(next) ? next : 'today';
+  for (const name of ['today','calls','goals','admin']) $('view-'+name).hidden = view !== name;
+  document.querySelectorAll('.desktop-nav [data-view],.mobile-nav [data-view]').forEach(el => {
+    el.classList.toggle('active',el.dataset.view===view);
+    if (el.dataset.view===view) el.setAttribute('aria-current','page');
+    else el.removeAttribute('aria-current');
+  });
+  const name = selectedAgent()?.username;
+  const titles = {
+    today: ['Overview',watchingTeam() ? (name ? name+'’s overview' : 'Team overview') : 'Your day, at a glance.',
+      watchingTeam() ? (name ? 'Daily outcomes and progress toward assigned goals.' : 'No agents are assigned to your team yet.') : 'Every conversation counts. See how yours add up.'],
+    calls: ['Call log',watchingTeam() ? (name ? name+'’s call log' : 'Team call log') : 'Your call log.', 'Daily counts by outcome and service.'],
+    goals: ['Goals','Team goals','Set a performance target for everyone or choose individual agents.'],
+    admin: ['Admin','Workspace performance','Usage, outcomes and technical performance over the past 28 days.']
+  };
+  const [label,title,description] = titles[view];
+  $('breadcrumb-label').textContent=label;
+  $('page-title').textContent=title;
+  $('page-description').textContent=description;
+  const isReport = view === 'today' || view === 'calls';
+  document.querySelector('.date-control').hidden = !isReport;
+  document.querySelector('.add-call').hidden = !canLog() || !isReport;
+  history.replaceState(null,'','#'+view);
+  if (scroll) window.scrollTo({top:0,behavior:'instant'});
+  if (view==='admin' && previous!=='admin') loadAdminStats();
 }
+
+async function loadAdminStats() {
+  if (!sessionUser || teamContext.role !== 'admin') return;
+  const request = ++adminRequest, epoch = sessionEpoch;
+  $('admin-status').textContent = 'Loading report…';
+  try {
+    const stats = await apiRequest('adminStats',undefined,sessionUser.id);
+    if (epoch !== sessionEpoch || request !== adminRequest || teamContext.role !== 'admin') return;
+    displayAdminStats(stats);
+    $('admin-report').hidden = false;
+    $('admin-status').textContent = '';
+  } catch(error) {
+    if (epoch !== sessionEpoch || request !== adminRequest) return;
+    $('admin-report').hidden = true;
+    $('admin-status').textContent = error.message || 'Could not load the report.';
+  }
+}
+
 /** Make everything behind the phone entry sheet unavailable to keyboard and assistive navigation. */
 function setBackgroundInert(value){document.querySelectorAll('.sidebar,.topbar,.page-heading,.date-control,.summary-strip,.goals-panel,.recent-panel,.page-footer,.mobile-nav').forEach(el=>el.inert=value);}
 /** Focus call entry and use a modal sheet on phone screens. */
 function openEntry(){
+ if(!canLog())return;
  if(!ready)return showToast('Storage is not ready. Check the message above.');
  selectedDay=dayKey();allHistory=false;page=0;renderDashboard();if(view!=='today')setView('today');lastFocus=document.activeElement;
  if(window.matchMedia('(max-width: 760px)').matches){document.body.classList.add('entry-open');$('entry-backdrop').hidden=false;$('entry-panel').setAttribute('role','dialog');$('entry-panel').setAttribute('aria-modal','true');setBackgroundInert(true);}else $('entry-panel').scrollIntoView({block:'nearest',behavior:'smooth'});
@@ -186,7 +261,7 @@ function showHelp() {
 function showMetric(key){const m=metricsForDay(currentDay(),state.goals).find(m=>m.key===key);if(!m)return;
  let advice=m.reached?'You have reached this goal.':m.needed===null?(['sales','orders'].includes(key)?'Additional orders or lines on future calls can close this gap. One on each new call alone cannot reach an exact 100% target after a missed call.':'After a loss, an exact 100% save rate cannot be reached with a finite number of new eligible opportunities on this date.'):`${m.needed} more ${m.unit}${m.needed===1?'':'s'} on consecutive eligible ${m.opportunityUnit}s would reach your ${m.goal}% goal. Each enters the denominator.`;
  const converted=currentDay()?.saleCalls ?? 0;
- showDialog(m.label,`<div style="--ring-color:${m.color}" class="metric-detail-value">${percent(m.rate)}${m.rate===null?'':'%'}<small>Goal ${m.goal}%</small></div><div class="metric-facts"><div><strong>${m.successes}</strong><span>${key==='sales'?'Mobiles sold':key==='orders'?'Mobile orders':'Saves'}</span></div><div><strong>${m.total}</strong><span>Eligible ${m.opportunityUnit}s</span></div></div><div class="help-rule"><strong>How it's calculated</strong><p>${m.description}</p>${key==='sales'?`<p>Calls with a sale: ${converted} / ${m.total} (${m.total?percent(converted/m.total*100):'—'}%). This is separate from the line-based rate above.</p>`:''}</div><div class="rule-example">${advice}</div><div class="dialog-actions"><button class="button secondary" data-action="metric-goals">Edit goals</button><button class="button primary" data-action="close-dialog">Done</button></div>`);
+ showDialog(m.label,`<div style="--ring-color:${m.color}" class="metric-detail-value">${percent(m.rate)}${m.rate===null?'':'%'}<small>Goal ${m.goal}%</small></div><div class="metric-facts"><div><strong>${m.successes}</strong><span>${key==='sales'?'Mobiles sold':key==='orders'?'Mobile orders':'Saves'}</span></div><div><strong>${m.total}</strong><span>Eligible ${m.opportunityUnit}s</span></div></div><div class="help-rule"><strong>How it's calculated</strong><p>${m.description}</p>${key==='sales'?`<p>Calls with a sale: ${converted} / ${m.total} (${m.total?percent(converted/m.total*100):'—'}%). This is separate from the line-based rate above.</p>`:''}</div><div class="rule-example">${advice}</div><div class="dialog-actions">${watchingTeam() ? '<button class="button secondary" data-action="metric-goals">Team goals</button>' : ''}<button class="button primary" data-action="close-dialog">Done</button></div>`);
 }
 
 /** Download a local file without sending records over the network. */
@@ -199,7 +274,7 @@ function exportCalls() {
 }
 
 function openHistoryEditor(day) {
-  if (busy || !ready || !repo) return;
+  if (!canLog() || busy || !ready || !repo) return;
   const snapshot = structuredClone(state.days.find(item => item.day === day));
   if (!snapshot) return;
   const source = repo, epoch = sessionEpoch;
@@ -226,6 +301,7 @@ function openHistoryEditor(day) {
       $('detail-dialog').close();
       renderDashboard();
       channel?.postMessage({userId:sessionUser.id});
+      games.refresh();
       showToast('Saved history updated');
     } catch (error) {
       if (epoch !== sessionEpoch || source !== repo) return;
@@ -250,12 +326,6 @@ async function onClick(event) {
     page = 0;
     return renderCallLog();
   }
-  if (button.dataset.goal) {
-    const key = button.dataset.goal;
-    await setGoal(key, state.goals[key] + Number(button.dataset.delta));
-    document.querySelector(`[data-goal="${key}"][data-delta="${button.dataset.delta}"]`)?.focus({preventScroll:true});
-    return;
-  }
   switch(button.dataset.action) {
     case 'new-call': openEntry(); break;
     case 'sign-out': await signOut(); break;
@@ -275,7 +345,7 @@ async function onClick(event) {
 
 /** Keep keyboard navigation inside the mobile sheet and provide the N shortcut. */
 function onKeydown(event){if(!sessionUser)return;if(document.body.classList.contains('entry-open')&&!$('detail-dialog').open){if(event.key==='Escape'){event.preventDefault();closeEntry();return;}if(event.key==='Tab'){const nodes=[...$('entry-panel').querySelectorAll('button,input,select,textarea,summary')].filter(e=>!e.disabled&&e.getClientRects().length);const first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&(document.activeElement===first||!$('entry-panel').contains(document.activeElement))){event.preventDefault();last?.focus();}else if(!event.shiftKey&&(document.activeElement===last||!$('entry-panel').contains(document.activeElement))){event.preventDefault();first?.focus();}}}
- if(event.key.toLowerCase()==='n'&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!$('detail-dialog').open&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){event.preventDefault();openEntry();}}
+ if(event.key.toLowerCase()==='n'&&!document.querySelector('dialog[open]')&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!$('detail-dialog').open&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){event.preventDefault();openEntry();}}
 /** Advance today's view at Eastern midnight, retaining explicitly selected historical days. */
 function refreshDay(){const day=dayKey();if(previousDay!==day){if(selectedDay===previousDay)selectedDay=day;previousDay=day;renderDashboard();}}
 /** Render dates from the report's day string without browser timezone shifts. */
@@ -286,13 +356,31 @@ async function syncFromStorage(){
  const read={source:repo,epoch:sessionEpoch};
  pendingRead=read;
  try{
-   const fresh=await read.source.read();
+   let context;
+   try {
+     context = await apiRequest('teamContext',undefined,sessionUser.id);
+   } catch (error) {
+     // During a staged deployment the personal tracker can still read its existing state.
+     if (error.code !== 'STORAGE' && error.code !== 'SETUP' && error.code !== 'VALIDATION') throw error;
+     if (teamContext.role !== 'agent') throw error;
+     context = {role:'agent',agents:[]};
+   }
+   if(pendingRead!==read || read.epoch!==sessionEpoch)return;
+   applyRole(context);
+   const fresh = watchingTeam()
+     ? selectedAgentId ? validateTallyState(await apiRequest('agentState',{agentId:selectedAgentId},sessionUser.id)) : emptyState()
+     : await read.source.read();
    if(pendingRead!==read||read.epoch!==sessionEpoch)return;
-   state=fresh;ready=true;renderDashboard();
-   if(view!=='goals'||!document.activeElement?.closest('#goal-settings'))renderGoals();
-   setBusy(false);$('storage-banner').hidden=true;$('storage-status').textContent='Saved to your account';
+   state=fresh;ready=true;renderDashboard();setView(requestedView || view,false);requestedView = null;
+   setBusy(false);$('storage-banner').hidden=true;
+   $('storage-status').textContent=watchingTeam() ? 'Viewing your team' : 'Saved to your account';
+
  }catch(error){
-   if(pendingRead===read&&read.epoch===sessionEpoch&&error.code!=='AUTH')storageError(error.message||'Could not refresh your records.');
+   if(pendingRead===read&&read.epoch===sessionEpoch&&error.code!=='AUTH'){
+     if (watchingTeam()) { ready=false; state=emptyState();renderDashboard();setBusy(false); }
+     if (teamContext.role === 'admin' && view === 'admin') clearAdminReport();
+     storageError(error.message||'Could not refresh your records.');
+   }
  }finally{
    if(pendingRead===read)pendingRead=null;
  }
@@ -324,7 +412,7 @@ function renderAuth() {
 }
 /** Clear one account's data before displaying another account or the sign-in form. */
 function showSignIn(message=''){
- sessionEpoch++;sessionRequest++;sessionUser=null;authMode='login';ready=false;repo?.close();repo=null;busy=false;pendingRead=null;state=emptyState();closeEntry();$('detail-dialog').close();entry.reset();renderDashboard();renderGoals();$('workspace-view').hidden=true;$('auth-view').hidden=false;$('toast').hidden=true;clearTimeout(toastTimer);$('password').value='';$('auth-status').textContent='';renderAuth();setAuthBusy(false);authMessage(message);
+ sessionEpoch++;sessionRequest++;sessionUser=null;authMode='login';ready=false;repo?.close();repo=null;busy=false;pendingRead=null;state=emptyState();closeEntry();$('detail-dialog').close();entry.reset();games.closeSession();teamGoals.reset();applyRole({role:'agent',agents:[]});clearAdminReport();renderDashboard();$('workspace-view').hidden=true;$('auth-view').hidden=false;$('toast').hidden=true;clearTimeout(toastTimer);$('password').value='';$('auth-status').textContent='';renderAuth();setAuthBusy(false);authMessage(message);
 }
 async function enterWorkspace(user){
  const epoch=++sessionEpoch;
@@ -379,7 +467,7 @@ async function submitAuth(event) {
 async function signOut(){if(busy)return;if(entry.dirty()){showDialog('Sign out?',`<p>You have an unfinished call. Signing out discards this entry.</p><div class="dialog-actions"><button class="button secondary" data-action="close-dialog">Keep editing</button><button class="button primary" data-action="confirm-sign-out">Sign out</button></div>`);return;}await finishSignOut();}
 async function finishSignOut(){authenticating=true;sessionRequest++;try{await apiRequest('logout',{});showSignIn();channel?.postMessage({sessionChanged:true});}catch(e){storageError(e.message||'Could not sign out. Try again.');}finally{authenticating=false;}}
 async function checkSession(){if(authenticating)return;const epoch=sessionEpoch,request=++sessionRequest;try{const {user}=await apiRequest();if(epoch!==sessionEpoch||request!==sessionRequest)return;if(user){if(!sessionUser||user.id!==sessionUser.id){showSignIn();await enterWorkspace(user);}else await syncFromStorage();}else if(sessionUser)showSignIn('Your session ended. Sign in again.');else{$('auth-status').textContent='';setAuthBusy(false);}}catch(e){if(epoch!==sessionEpoch||request!==sessionRequest)return;if(!sessionUser){$('auth-status').textContent='';authMessage(e.message);setAuthBusy(false);}else storageError(e.message);}}
-async function initialize(){renderDashboard();setBusy(false);renderGoals();setView(location.hash.slice(1),false);renderAuth();setAuthBusy(true);await checkSession();}
+async function initialize(){renderDashboard();setBusy(false);setView(location.hash.slice(1),false);renderAuth();setAuthBusy(true);await checkSession();}
 
 document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
 document.addEventListener('click',event=>{onClick(event).catch(e=>storageError(e.message||'The action could not be completed.'));});
@@ -399,8 +487,17 @@ $('auth-form').addEventListener('input', ({target}) => {
 $('auth-mode-toggle').addEventListener('click',()=>{authMode=authMode==='login'?'signup':'login';renderAuth();});
 window.addEventListener('session-expired',event=>{if(event.detail?.userId===sessionUser?.id)showSignIn('Your session changed or expired. Sign in again.');});
 $('report-date').addEventListener('change',event=>{const value=event.target.value;if(validDay(value)&&value<=dayKey()){selectedDay=value;allHistory=false;page=0;renderDashboard();}});
-document.addEventListener('input',event=>{if(event.target.dataset.goalSlider)event.target.closest('.goal-setting').querySelector('.goal-stepper strong').textContent=event.target.value+'%';});
-document.addEventListener('change',event=>{if(event.target.dataset.goalSlider)setGoal(event.target.dataset.goalSlider,event.target.value);});
+$('team-agent').addEventListener('change',async () => {
+  if (!watchingTeam() || !teamContext.agents.some(agent => agent.id === $('team-agent').value)) return;
+  selectedAgentId = $('team-agent').value;
+  // Invalidate pending reads before switching so a slower response cannot paint the previous agent.
+  pendingRead = null; ready = false; state = emptyState(); page = 0;
+  $('detail-dialog').close();setBusy(false);renderDashboard();
+  setView(view === 'calls' ? 'calls' : 'today');
+  $('storage-status').textContent = 'Loading team member…';
+  await syncFromStorage();
+});
+$('refresh-admin').addEventListener('click',loadAdminStats);
 $('entry-backdrop').addEventListener('click',closeEntry);
 window.matchMedia('(max-width: 760px)').addEventListener('change',closeEntry);
 channel?.addEventListener('message',event=>{if(event.data?.sessionChanged)checkSession();else if(event.data?.userId===sessionUser?.id)syncFromStorage();});
