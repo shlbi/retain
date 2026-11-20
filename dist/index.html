@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="team.css">
   <link rel="stylesheet" href="games.css">
   <link rel="stylesheet" href="auth.css">
+  <link rel="stylesheet" href="accounts.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -27,6 +28,7 @@
         <h1 id="auth-title">Welcome back</h1>
         <p id="credential-notice" class="credential-notice"><span data-icon="lock" aria-hidden="true"></span>you can not use your spectrum credentials</p>
         <form id="auth-form" class="auth-form" aria-describedby="credential-notice">
+          <p id="signup-confirmation" class="auth-confirmation" role="status" hidden></p>
           <div class="auth-field">
             <label for="username">Username</label>
             <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
@@ -42,10 +44,15 @@
             </div>
             <p id="password-rule" class="auth-rule" hidden>Up to 8 characters.</p>
           </div>
+          <fieldset id="signup-role-field" class="signup-role" hidden>
+            <legend>Requested role</legend>
+            <div class="role-options"><label><input type="radio" name="requestedRole" value="agent" checked>Agent</label><label><input type="radio" name="requestedRole" value="supervisor">Supervisor</label></div>
+            <p class="auth-rule">An admin reviews your request before you can sign in.</p>
+          </fieldset>
           <p id="auth-error" class="auth-error" role="alert" hidden></p>
           <button id="auth-submit" class="auth-submit" type="submit">Sign in</button>
         </form>
-        <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">Create an account</button>
+        <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">Request an account</button>
         <p id="auth-status" class="auth-status" role="status">Checking session…</p>
         <noscript><p class="auth-error">Enable JavaScript to sign in and use your workspace.</p></noscript>
       </section>
@@ -149,14 +156,58 @@
         </form>
       </section>
       <section id="view-admin" class="view" hidden>
+        <nav class="admin-sections" aria-label="Admin sections">
+          <button id="admin-open-performance" type="button" aria-controls="admin-performance" aria-current="page">Performance</button>
+          <button id="admin-open-accounts" type="button" aria-controls="admin-accounts">Accounts</button>
+        </nav>
+        <section id="admin-performance" aria-label="Performance">
         <p id="admin-status" class="team-secondary" role="status"></p>
         <button id="refresh-admin" class="text-button">Refresh report</button>
-        <div id="admin-report" hidden>
-          <div class="admin-cards" id="admin-summary"></div>
-          <section class="panel admin-panel"><h2>Performance over time</h2><p>Compare the last two 14-day periods using logged outcomes.</p><div id="admin-trend"></div></section>
-          <section class="panel admin-panel"><h2>Team results</h2><p>Totals use current team assignments.</p><div id="admin-team-table"></div></section>
-          <section class="panel admin-panel"><h2>Technical performance</h2><div class="admin-cards technical-cards" id="admin-technical"></div></section>
-        </div>
+        <div id="admin-report" hidden></div>
+        </section>
+        <section id="admin-accounts" aria-label="Accounts" hidden>
+          <p id="accounts-status" class="accounts-status" role="status"></p>
+          <div class="accounts-layout">
+            <section class="panel account-card account-requests" aria-labelledby="requests-title">
+              <div class="account-card-heading"><h2 id="requests-title">Sign-up requests <span id="request-count" class="account-count" hidden></span></h2><button type="button" id="accounts-refresh" class="text-button">Refresh</button></div>
+              <div id="signup-requests"></div>
+            </section>
+            <section class="panel account-card" aria-labelledby="create-account-title">
+              <h2 id="create-account-title">Create account</h2>
+              <form id="admin-create-form" class="account-form">
+                <fieldset id="create-controls" disabled>
+                  <label>Username<input name="username" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="admin-username-rule" required></label>
+                  <p id="admin-username-rule" class="account-hint">1–8 characters. Start with a character other than a number or P.</p>
+                  <label>Password<input name="password" type="password" autocomplete="new-password" aria-describedby="admin-password-rule" required></label>
+                  <p id="admin-password-rule" class="account-hint">1–8 characters. You can not use your Spectrum credentials.</p>
+                  <fieldset class="account-role-field"><legend>Role</legend><div class="role-options"><label><input type="radio" name="role" value="agent" checked>Agent</label><label><input type="radio" name="role" value="supervisor">Supervisor</label><label><input type="radio" name="role" value="admin">Admin</label></div></fieldset>
+                  <label class="team-assignment">Supervisor<select name="supervisorId"><option value="">Unassigned</option></select></label>
+                  <p class="account-form-error" role="alert" hidden></p>
+                  <button class="button primary" type="submit">Create account</button>
+                </fieldset>
+              </form>
+            </section>
+            <section class="panel account-card accounts-directory" aria-labelledby="directory-title">
+              <div class="account-card-heading"><h2 id="directory-title">Existing accounts <span id="directory-count" class="account-count" hidden></span></h2><label class="directory-search">Find an account<input id="directory-query" type="search" autocomplete="off" placeholder="Search username"></label></div>
+              <div id="account-directory"></div>
+              <div class="directory-pages" id="directory-pages" hidden><button type="button" class="button secondary" id="directory-prev">Previous</button><span id="directory-page"></span><button type="button" class="button secondary" id="directory-next">Next</button></div>
+            </section>
+          </div>
+          <dialog id="account-dialog" aria-labelledby="account-dialog-title">
+            <div class="dialog-heading"><h2 id="account-dialog-title">Edit account</h2><button type="button" id="account-dialog-close" class="icon-button" aria-label="Close"><span data-icon="close"></span></button></div>
+            <form id="account-dialog-form" class="account-form dialog-body">
+              <fieldset>
+                <div id="account-edit-fields">
+                  <label>Role<select name="role"><option value="agent">Agent</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option></select></label>
+                  <label class="team-assignment">Supervisor<select name="supervisorId"></select></label>
+                </div>
+                <p id="account-dialog-detail" class="account-hint"></p>
+                <p class="account-form-error" role="alert" hidden></p>
+                <div class="dialog-actions"><button type="button" id="account-dialog-cancel" class="button secondary">Cancel</button><button type="submit" id="account-dialog-submit" class="button primary">Save changes</button></div>
+              </fieldset>
+            </form>
+          </dialog>
+        </section>
       </section>
     </main>
   </div>

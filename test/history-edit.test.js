@@ -17,8 +17,8 @@ test('history corrections persist, retry safely, enforce ownership and reject st
     for (const file of (await readdir(dir)).filter(file=>file.endsWith('.sql')).sort()) {
       await db.exec('begin;'+await readFile(new URL(file,dir),'utf8')+'commit;');
     }
-    const user=await rpc('auth_register',['edituser','test-hash']);
-    const other=await rpc('auth_register',['other','test-hash']);
+    const {rows:[user,other]} = await db.query(`insert into workspace_private.users(username,username_key,password_hash)
+      values ('edituser','edituser','test-hash'),('other','other','test-hash') returning id`);
     const delta=tallyForCall({before:['internet','tv'],kept:['internet'],mobileOrders:[3]});
     const original=await rpc('workspace_tally',[user.id,'2026-11-06',delta,randomUUID()]);
     const form=historyEditor(original);

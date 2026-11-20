@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { createHandler, readJson, MAX_REQUEST_BYTES } from '../server/workspace-handler.js';
 import { createDatabase, ApiError } from '../server/database.js';
-import { hashPassword, newSession } from '../server/auth.js';
+import { hashPassword, verifyPassword, newSession } from '../server/auth.js';
 import { DEFAULT_GOALS } from '../dist/model.js';
 
 const USER_A = {id:'11111111-1111-4111-8111-111111111111',username:'Agent A'};
@@ -33,7 +33,7 @@ function fakeDatabase({user=USER_A,fail,allowed=true}={}) {
     if(name==='workspace_edit_day')return args.p_replacement;
     if(name==='workspace_tally')return {day:args.p_day,...args.p_delta};
     if(name==='workspace_goal')return args.p_value;
-    if(name==='auth_register')return USER_A;
+    if(name==='auth_request_signup')return {status:'pending'};
     return null;
   }};
 }
@@ -79,18 +79,15 @@ test('cloud setup errors are explicit and responses never enable CORS or caching
   assert.equal(response.headers['content-type'],'application/json; charset=utf-8');
 });
 
-test('signup accepts a one-character password and stores only hashes with a secure cookie',async()=>{
-  const db=fakeDatabase(),handler=createHandler({env:ENV,database:db,clock:()=>Date.UTC(2026,10,6)});
+test('signup accepts a one-character password and requests approval without a session',async()=>{
+  const db=fakeDatabase(),handler=createHandler({env:ENV,database:db});
   const response=await request(handler,{body:{action:'signup',username:'  One  ',password:'x'}});
-  assert.equal(response.status,200);assert.deepEqual(response.body,{user:USER_A});
-  const register=db.calls.find(call=>call.name==='auth_register');
-  assert.equal(register.args.p_username,'One');assert.match(register.args.p_password_hash,/^scrypt\$/);
-  const created=db.calls.find(call=>call.name==='auth_create_session');
-  assert.match(created.args.p_token_hash,/^[a-f0-9]{64}$/);
-  assert.equal(created.args.p_expires_at,'2026-12-06T00:00:00.000Z');
-  assert.match(response.headers['set-cookie'],/HttpOnly; SameSite=Strict;.*Secure/);
-  assert.ok(!response.headers['set-cookie'].includes(created.args.p_token_hash));
-  assert.doesNotMatch(JSON.stringify(response.body),/password|scrypt|token/i);
+  assert.equal(response.status,202);assert.deepEqual(response.body,{status:'pending'});
+  const register=db.calls.find(call=>call.name==='auth_request_signup');
+  assert.equal(register.args.p_username,'One');assert.equal(register.args.p_requested_role,'agent');
+  assert.ok(await verifyPassword('x',register.args.p_password_hash));
+  assert.equal(response.headers['set-cookie'],undefined);
+  assert.ok(!db.calls.some(call=>['auth_create_session','auth_register'].includes(call.name)));
 });
 
 test('registration enforces credential rules before writing to the database', async () => {
@@ -105,7 +102,7 @@ test('registration enforces credential rules before writing to the database', as
 
 test('an existing account can still log in with credentials outside current signup rules', async () => {
   const username = 'PreviousAgent', password = 'old long password';
-  const stored = {...USER_A, username, password_hash:await hashPassword(password)};
+  const stored = {...USER_A, username, status:'active', password_hash:await hashPassword(password)};
   const db = fakeDatabase(), rpc = db.rpc.bind(db);
   db.rpc = async (name, args) => name === 'auth_get_user' ? stored : rpc(name, args);
   const response = await request(createHandler({env:ENV, database:db}), {body:{action:'login', username, password}});
@@ -124,12 +121,13 @@ test('login uses identical public errors for unknown accounts and wrong password
 });
 
 test('successful login rotates the previous cookie session without exposing hashes',async()=>{
-  const stored={...USER_A,password_hash:await hashPassword(' ')};
+  const stored={...USER_A,status:'active',password_hash:await hashPassword(' ')};
   const db=fakeDatabase(),rpc=db.rpc.bind(db);db.rpc=async(name,args)=>name==='auth_get_user'?stored:rpc(name,args);
   const response=await request(createHandler({env:ENV,database:db}),{body:{action:'login',username:'Agent A',password:' '},cookie:session()});
   assert.equal(response.status,200);assert.deepEqual(response.body,{user:USER_A});
   assert.deepEqual(db.calls.filter(call=>['auth_create_session','auth_logout'].includes(call.name)).map(call=>call.name),['auth_create_session','auth_logout']);
   assert.match(response.headers['set-cookie'],/workspace_session=[A-Za-z0-9_-]{43};/);
+  assert.match(response.headers['set-cookie'],/HttpOnly; SameSite=Strict;.*Secure/);
   assert.doesNotMatch(JSON.stringify(response.body),/scrypt|password_hash/);
 });
 
@@ -228,7 +226,7 @@ test('history edits use session ownership and reject different report dates',asy
 
 test('team and games actions bind access to the signed-in actor',async()=>{
   const db=fakeDatabase(), cookie=session(), handler=createHandler({env:ENV,database:db});
-  for (const [action,rpc] of [['teamContext','workspace_team_context'],['adminStats','workspace_admin_stats'],['gameState','workspace_game_state']]) {
+  for (const [action,rpc] of [['teamContext','workspace_team_context'],['adminStats','workspace_admin_stats'],['adminPerformance','workspace_admin_performance'],['gameState','workspace_game_state']]) {
     const route={method:'GET',url:'/api/workspace?action='+action};
     assert.equal((await request(handler,route)).status,401);
     assert.equal((await request(handler,{...route,cookie})).status,200);
@@ -239,4 +237,78 @@ test('team and games actions bind access to the signed-in actor',async()=>{
   await request(handler,{cookie,body:{action:'teamGoals',agentIds:[USER_B.id],goals}});
   assert.deepEqual(db.calls.find(c=>c.name==='workspace_team_goals').args,{p_user_id:USER_A.id,p_agent_ids:[USER_B.id],p_goals:goals});
   assert.ok(db.calls.some(c=>c.name==='workspace_record_request'));
+});
+
+test('supervisor signups are requests and public signups cannot grant privileges',async()=>{
+  const db=fakeDatabase(), handler=createHandler({env:ENV,database:db});
+  const signup={action:'signup',username:'Leader',password:'x'};
+  const pending=await request(handler,{body:{...signup,requestedRole:'supervisor'}});
+  assert.equal(pending.status,202);
+  assert.equal(db.calls.find(c=>c.name==='auth_request_signup').args.p_requested_role,'supervisor');
+  for (const fields of [{requestedRole:'admin'},{requestedRole:null},{role:'supervisor'},{supervisorId:USER_A.id}]) {
+    assert.equal((await request(handler,{body:{...signup,...fields}})).status,400);
+  }
+  assert.equal(db.calls.filter(c=>c.name==='auth_request_signup').length,1);
+});
+
+test('pending credentials disclose status only on a password match and cannot create sessions',async()=>{
+  const stored={...USER_A,status:'pending',password_hash:await hashPassword('x')};
+  const db=fakeDatabase(), rpc=db.rpc.bind(db);
+  db.rpc=(name,args)=>name==='auth_get_user'?stored:rpc(name,args);
+  const handler=createHandler({env:ENV,database:db});
+  const login=password=>request(handler,{body:{action:'login',username:USER_A.username,password}});
+  assert.equal((await login('wrong')).status,401);
+  const pending=await login('x');
+  assert.equal(pending.status,403);assert.equal(pending.body.error.code,'PENDING_APPROVAL');
+  stored.status='unknown';
+  assert.equal((await login('x')).status,503);
+  assert.ok(!db.calls.some(c=>c.name==='auth_create_session'));
+  assert.equal(pending.headers['set-cookie'],undefined);
+});
+
+test('admin management verifies actor and projection, binds writes and never returns hashes',async()=>{
+  const db=fakeDatabase(), rpc=db.rpc.bind(db), cookie=session();
+  const managed={id:USER_B.id,username:'Member',role:'agent',supervisorId:null};
+  const requestedAt='2026-11-19T14:00:00Z';
+  const pending={id:requestId,username:'Leader',requestedRole:'supervisor',requestedAt};
+  const calls=[];
+  db.rpc=(name,args)=>{
+    calls.push({name,args});
+    if(name==='workspace_admin_accounts')return {accounts:[{...managed,password_hash:'secret'}],pending:[{...pending,password_hash:'secret'}]};
+    if(name==='workspace_team_context')return {role:'admin'};
+    if(name.startsWith('workspace_admin_'))return {ok:true,password_hash:'secret'};
+    return rpc(name,args);
+  };
+  const handler=createHandler({env:ENV,database:db});
+  const directory={method:'GET',url:'/api/workspace?action=adminAccounts'};
+  assert.equal((await request(handler,directory)).status,401);
+  assert.deepEqual((await request(handler,{...directory,cookie})).body,{accounts:[managed],pending:[pending]});
+  const assign={action:'adminAssignAccount',accountId:managed.id,role:'supervisor',supervisorId:null,expectedRole:'agent',expectedSupervisorId:null};
+  assert.equal((await request(handler,{cookie,body:{...assign,expectedRole:undefined}})).status,400);
+  assert.equal((await request(handler,{cookie,body:{...assign,supervisorId:USER_A.id}})).status,400);
+  assert.equal((await request(handler,{cookie,expected:USER_B.id,body:assign})).status,401);
+  assert.deepEqual((await request(handler,{cookie,body:assign})).body,{ok:true});
+  assert.deepEqual(calls.find(c=>c.name==='workspace_admin_assign_account').args,{p_user_id:USER_A.id,p_account_id:USER_B.id,p_role:'supervisor',p_supervisor_id:null,p_expected_role:'agent',p_expected_supervisor_id:null});
+  const review={action:'adminReviewSignup',requestId};
+  assert.equal((await request(handler,{cookie,body:{...review,decision:'approve',role:'admin'}})).status,400);
+  assert.equal((await request(handler,{cookie,body:{...review,decision:'deny',role:'agent'}})).status,400);
+  for(const fields of [{decision:'approve',role:'supervisor',supervisorId:null},{decision:'deny'}]) {
+    assert.deepEqual((await request(handler,{cookie,body:{...review,...fields}})).body,{ok:true});
+  }
+  assert.deepEqual(calls.filter(c=>c.name==='workspace_admin_review_signup').map(c=>[c.args.p_user_id,c.args.p_request_id,c.args.p_decision,c.args.p_role,c.args.p_supervisor_id]),[
+    [USER_A.id,requestId,'approve','supervisor',null],[USER_A.id,requestId,'deny',null,null]
+  ]);
+  const create={action:'adminCreateAccount',username:'Lead',password:'X',role:'admin',supervisorId:null};
+  assert.deepEqual((await request(handler,{cookie,body:create})).body,{ok:true});
+  const write=calls.find(c=>c.name==='workspace_admin_create_account').args;
+  assert.equal(write.p_user_id,USER_A.id);assert.equal(write.p_role,'admin');assert.equal(write.p_username,'Lead');
+  assert.ok(await verifyPassword('X',write.p_password_hash));
+});
+
+test('account creation enforces signup rules and rejects non-admins before hashing',async()=>{
+  const db=fakeDatabase(),cookie=session(),handler=createHandler({env:ENV,database:db});
+  const create={action:'adminCreateAccount',username:'Agent',password:'x',role:'agent',supervisorId:null};
+  assert.equal((await request(handler,{cookie,body:{...create,username:'Pete'}})).status,400);
+  assert.equal((await request(handler,{cookie,body:create})).status,403);
+  assert.ok(!db.calls.some(c=>c.name==='workspace_admin_create_account'));
 });

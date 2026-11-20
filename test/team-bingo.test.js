@@ -30,7 +30,10 @@ before(async()=>{
     await db.exec('begin;'+await readFile(new URL(file,dir),'utf8')+'commit;');
   }
   for (const user of ['sue','lee','amber','jane','kai','ali','maya','saif']) {
-    team[user]=(await rpc('auth_register',user,'synthetic-hash')).id;
+    const {rows} = await db.query(
+      'insert into workspace_private.users(username,username_key,password_hash) values ($1,$1,$2) returning id',
+      [user,'synthetic-hash']);
+    team[user]=rows[0].id;
   }
   await db.query("update workspace_private.users set role='supervisor' where id in ($1,$2)",[team.sue,team.lee]);
   await db.query("update workspace_private.users set role='admin' where id=$1",[team.saif]);

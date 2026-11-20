@@ -18,18 +18,70 @@
 .game-widget b { color:#c9ddff; }
 .game-widget .widget-own { border-inline-start:1px solid #7b98c2; padding-inline-start:8px; }
 .games-dock:not([hidden]) + main { padding-top:48px; }
-.game-panel { position:fixed;inset:0 0 0 auto;width:50vw;max-width:none;height:100dvh;max-height:100dvh;padding:0;margin:0;border:0;border-radius:0;overflow:hidden;background:#fbfcff;color:#1f3854;box-shadow:-18px 0 55px #09244424;text-align:start; }
-.game-panel { transform:translateX(100%); transition:transform .2s ease, display .2s allow-discrete, overlay .2s allow-discrete; }
-.game-panel[open] { display:flex; flex-direction:column; transform:translateX(0); }
-@starting-style { .game-panel[open] { transform:translateX(100%); } }
-.game-panel::backdrop { background:#15365c45; }
+/* Each pane scrolls independently, so logging a call never covers the game. */
+#workspace-view.games-split {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  grid-template-rows:minmax(0,1fr);
+  height:100dvh;
+}
+.games-split .app-shell {
+  grid-area:1 / 1;
+  min-width:0;
+  min-height:0;
+  overflow:auto;
+  overscroll-behavior:contain;
+  container:workspace-pane / inline-size;
+}
+.game-panel {
+  grid-area:1 / 2;
+  min-width:0;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  border-inline-start:1px solid #bfcfe2;
+  background:#fbfcff;
+  color:#1f3854;
+  text-align:start;
+  animation:game-enter .18s ease-out;
+}
+@keyframes game-enter { from { transform:translateX(12px);opacity:.4; } }
+.game-open[aria-expanded="true"] { background:#e8f1fd; border-color:#9dbbe1; color:#174f90; }
+.games-split .games-dock:not([hidden]) { height:auto; margin:0; padding:4px 12px; background:#f2f6fc; border-bottom:1px solid #dce6f1; }
+.games-split .game-widget { top:0; }
+.games-split .games-dock:not([hidden]) + main { padding-top:18px; }
+.games-split .overview-grid { grid-template-columns:minmax(0,1fr) minmax(275px,34%); gap:16px; }
+.games-split .rings-grid { grid-template-columns:repeat(auto-fit,minmax(min(128px,100%),1fr)); padding-inline:8px; }
+.games-split .ring-visual { width:min(125px,100%);height:auto;aspect-ratio:1; }
+.games-split main { padding:24px clamp(14px,2vw,30px); }
+.games-split .game-panel > header { flex:none; }
+@container workspace-pane (max-width:780px) {
+  .games-split .overview-grid { grid-template-columns:minmax(0,1fr); }
+  .games-split .entry-column { order:-1; height:auto; }
+  .games-split .entry-panel { display:block; }
+  .games-split .sheet-handle,.games-split .close-entry { display:none; }
+  .games-split .topbar { padding:9px 14px; gap:6px; min-height:58px; height:auto; }
+  .games-split .summary-item { padding-inline:8px; gap:8px; }
+  .games-split .summary-item:first-child { padding-left:0; }
+  .games-split .summary-content { display:grid; gap:3px; }
+  .games-split .summary-content span { margin:0; }
+}
+@container workspace-pane (max-width:560px) {
+  .games-split .breadcrumb,.games-split .summary-icon,.games-split .add-call kbd { display:none; }
+  .games-split .topbar-right { margin-left:auto; }
+  .games-split h1 { font-size:24px; }
+  .games-split .page-heading { gap:8px; margin-bottom:14px; }
+  .games-split .date-control { flex-wrap:wrap; }
+  .games-split .call-toolbar { flex-wrap:wrap; }
+  .games-split .filter-tabs { max-width:100%; flex-wrap:wrap; }
+}
 
 .game-panel > header { display:flex; justify-content:space-between; align-items:center; padding:18px clamp(16px,3vw,38px); border-bottom:1px solid #dce6f2; background:#fff; }
 .game-panel h2,.game-panel h3,.game-panel h4 { margin:0; color:#16314f; letter-spacing:-.025em; }
 .game-panel h2 { font-size:22px; }
 .game-panel h3 { font-size:clamp(20px,2.4vw,30px); line-height:1.15; overflow-wrap:anywhere; }
 .game-panel h4 { font-size:16px; }
-.game-panel-scroll { overflow:auto; padding:22px clamp(16px,3vw,38px) max(30px,env(safe-area-inset-bottom)); }
+.game-panel-scroll { flex:1;min-height:0;overflow:auto;overscroll-behavior:contain; padding:22px clamp(16px,3vw,38px) max(30px,env(safe-area-inset-bottom)); }
 .game-controls:empty { display:none; }
 .game-controls:not(:empty) { display:flex; justify-content:flex-end; margin-bottom:20px; }
 .games-current { min-width:0; }
@@ -90,7 +142,6 @@
   #workspace-view .sidebar .nav-item,#workspace-view .sidebar .help-button { justify-content:flex-start; font-size:13px; line-height:1.4; gap:12px; padding:8px 12px; }
   #workspace-view .sidebar .nav-item>span { flex:none; }
   #workspace-view .sidebar .demo-note { display:block; }
-  .game-panel { width:max(50vw,420px); max-width:100vw; }
 }
 @media(max-width:760px) {
   #workspace-view .topbar { flex-wrap:nowrap; justify-content:space-between; padding:8px 12px; }
@@ -98,11 +149,19 @@
   .games-dock { margin-right:9px; }
   .game-widget { justify-content:flex-start; max-width:calc(100vw - 18px); font-size:10px; gap:5px; }
   .games-dock:not([hidden]) + main { padding-top:52px; }
-  .game-panel { width:min(100vw,540px); }
+  #workspace-view.games-split { height:calc(100dvh - 66px - env(safe-area-inset-bottom)); }
+  .games-split .app-shell main { padding-bottom:18px; }
   .game-block-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .game-block { padding:7px; }
   .game-block label,.game-block select { font-size:12px; }
   .games-form .games-dates { grid-template-columns:1fr; }
+}
+@media(max-width:760px) and (orientation:portrait), (max-width:620px) {
+  #workspace-view.games-split { grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,3fr) minmax(0,2fr); }
+  .game-panel { grid-area:2 / 1; border-inline-start:0; border-top:2px solid #9cb5d3; }
+  .game-panel > header { padding:6px 14px; }
+  .game-panel h2 { font-size:18px; }
+  .game-panel-scroll { padding:12px 14px 20px; }
 }
 @media(max-width:400px) {
   #workspace-view .topbar-right .storage-status { max-width:90px; }
@@ -112,7 +171,7 @@
   .game-block > label { grid-template-columns:auto 54px;align-items:center; }
 }
 @media(prefers-reduced-motion:reduce) {
-  #workspace-view .sidebar,.game-panel,.game-panel[open] { transition:none; animation:none; }
+  #workspace-view .sidebar,.game-panel { transition:none; animation:none; }
 }
 .game-widget > span { max-width:12ch; overflow:hidden; text-overflow:ellipsis; }
 @media(max-width:480px) {

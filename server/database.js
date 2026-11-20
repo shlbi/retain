@@ -9,6 +9,9 @@ export function databaseError(error) {
   if (category === 'DUPLICATE' || error?.code === '23505') return new ApiError(409,'DUPLICATE','That username already exists.');
   if (category === 'CONFLICT') return new ApiError(409,'CONFLICT','These records changed or conflict with existing records. Reload the latest records before trying again. No conflicting changes were applied.');
   if (category === 'FORBIDDEN') return new ApiError(403,'FORBIDDEN','Your role or team assignment does not allow this action.');
+  if (category === 'SELF_ROLE') return new ApiError(403,'SELF_ROLE','You can change your team. Another admin must change your role.');
+  if (category === 'TEAM_IN_USE') return new ApiError(409,'TEAM_IN_USE','Reassign this supervisor’s team members before changing their role.');
+  if (category === 'INVALID_TEAM') return new ApiError(400,'INVALID_TEAM','Choose a current supervisor or leave the account unassigned.');
   if (category === 'LIMIT') return new ApiError(400,'VALIDATION','This workspace has reached its storage capacity.');
   if (category === 'VALIDATION') return new ApiError(400,'VALIDATION','The supplied record or target is invalid, or the workspace storage limit would be exceeded. No changes were applied.');
   return new ApiError(503,'STORAGE','Cloud storage could not confirm this operation. Try the same operation again.');

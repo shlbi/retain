@@ -47,7 +47,7 @@ Use separate Supabase projects for production and previews if preview builds sho
 
 Use a test workspace and synthetic selections for these checks.
 
-1. Sign up and record a call that starts with Internet and Video and keeps Internet. Confirm the row shows **DP → SP**, **Internet kept**, **Video disconnected** and **1 account**.
+1. Submit a test agent sign-up. Confirm sign-in shows the pending status. In a separate admin session, approve the request in **Admin → Accounts**. Then sign in as the test agent and record a call that starts with Internet and Video and keeps Internet. Confirm the row shows **DP → SP**, **Internet kept**, **Video disconnected** and **1 account**.
 2. Save the same combination as a second call. Refresh, then sign in on another device. Confirm a single matching row shows **2 accounts** and the call counter shows **2**.
 3. Log two accounts on one call with identical starting services. Keep every original service on one account and disconnect every original service on the other. Confirm that the resulting rows carry the **Wash** tag and that call count increases by one.
 4. Log one mobile order with three lines. Confirm the daily mobile row gains one order and three lines. The first order on an account that started without Mobile also earns one mobile service save.
@@ -64,25 +64,33 @@ The API uses expiring sessions, salted password hashes, rate limits and atomic p
 
 ## Team setup and permissions
 
-Apply `20261120005722_team_roles.sql`, `20261120005738_team_bingo.sql` and `20261120010012_bingo_realtime.sql` in order. Existing accounts and new signups start as agents. The web app derives roles from the signed-in account. Only a Supabase operator can change roles or team membership.
+Apply the team, bingo, account-management and performance-report migrations in filename order. Upgrading preserves existing active accounts, sessions, roles, team assignments and history. New public sign-ups go to a private requests table. Active workspaces and sessions are created only for approved or admin-created accounts.
 
-In the SQL Editor, look up the exact existing tracker usernames and confirm their UUIDs. Substitute those verified UUIDs for the placeholders below. Run only the statements needed for the assignment. The dashboard and games pick up new assignments after a refresh.
+Use **Admin → Accounts** for normal operations:
+
+1. Open a pending request and approve it as an agent or supervisor, or deny it. Denial removes the pending password hash and releases the username. Approvals let the person sign in with the credentials they already chose.
+2. To set up a team, assign the supervisor role to an existing account or create a supervisor account. Assign the team’s agents to that supervisor using the directory. Admins can also join a supervisor's team as players.
+3. To change a supervisor's role, move their members first. Each admin keeps their own admin role when editing their own assignment. Role and roster checks run in the database on each privileged operation.
+
+### First admin on a fresh installation
+
+The production tracker already has an admin. The steps below are only for a new database that has none. Have the intended owner submit a sign-up and confirm the username directly with them. As a database operator, find that username in the private sign-up requests table and copy the matching request ID into the transaction below. The query consumes that exact request, transfers its existing password hash and creates the admin in the same transaction.
 
 ```sql
--- Promote the chosen team leader. A supervisor cannot report to another supervisor.
-update workspace_private.users set role='supervisor', supervisor_id=null
-where id='<supervisor-uuid>'::uuid returning username, role;
-
--- Assign a player. Admins participate in their supervisor's game as players.
-update workspace_private.users set supervisor_id='<supervisor-uuid>'::uuid
-where id='<player-uuid>'::uuid and role in ('agent','admin')
-returning username, role, supervisor_id;
-
--- Restrict this operation to a verified owner account.
-update workspace_private.users set role='admin'
-where id='<owner-uuid>'::uuid returning username, role;
+begin;
+lock table workspace_private.users, workspace_private.signup_requests in share row exclusive mode;
+with initial as (
+  delete from workspace_private.signup_requests
+  where id = '<verified-request-uuid>'::uuid
+    and not exists (select 1 from workspace_private.users where role = 'admin')
+  returning username, username_key, password_hash
+)
+insert into workspace_private.users (username, username_key, password_hash, role)
+select username, username_key, password_hash, 'admin' from initial
+returning username, role;
+commit;
 ```
 
-Moving a player to another supervisor changes their dashboard access and game roster. Reassign a supervisor's members before changing the supervisor's role. The server binds every team RPC to the session user, and the database checks the actor's role and team membership for each privileged operation. Test team isolation using two separate test teams, including an attempt to assign goals across teams.
+Once an admin exists, the transaction affects zero rows. For team verification, use two synthetic teams and check that each supervisor can open only their assigned agents.
 
 For cross-device game updates, the browser subscribes to an opaque Supabase Broadcast topic for its team. Messages contain an empty refresh signal. Each client reloads standings through the session-bound workspace endpoint. Removing or transferring a member rotates the old team's topic. The hosted project uses its publishable key for this socket. To rotate it or point the deployment at another hosted project, set `SUPABASE_PUBLISHABLE_KEY` to an enabled `sb_publishable_` key for `SUPABASE_URL` and redeploy. Server credentials stay in the server adapter. Live games fall back to polling during a socket outage.

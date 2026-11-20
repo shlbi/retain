@@ -101,7 +101,7 @@ function readSchedule(form) {
     squares:defaultSquares.map((_,i) => ({metric:fields.get('metric-'+i),target:Number(fields.get('target-'+i))}))};
 }
 
-export function createGames({apiRequest}) {
+export function createGames({apiRequest,onOpen}) {
   const workspace = document.getElementById('workspace-view');
   const sidebar = workspace.querySelector('.sidebar');
   const header = workspace.querySelector('.topbar');
@@ -110,15 +110,17 @@ export function createGames({apiRequest}) {
   header.insertAdjacentHTML('afterbegin','<button type="button" class="menu-switch" aria-controls="' + sidebar.id + '" aria-label="Open navigation">' + icon('menu') + '</button>');
   sidebar.insertAdjacentHTML('afterbegin','<button type="button" class="menu-close" aria-label="Close navigation">' + icon('close') + '</button>');
   sidebar.insertAdjacentHTML('afterend','<button type="button" class="menu-shade" aria-label="Close navigation" hidden></button>');
-  header.querySelector('.topbar-right').insertAdjacentHTML('afterbegin','<button type="button" class="game-open" aria-haspopup="dialog" aria-controls="team-game-panel">' + icon('bingo') + ' Games</button>');
-  header.insertAdjacentHTML('afterend','<div class="games-dock" hidden><button type="button" class="game-widget" aria-haspopup="dialog" aria-controls="team-game-panel"></button></div>');
-  workspace.insertAdjacentHTML('beforeend','<dialog id="team-game-panel" class="game-panel" aria-labelledby="team-game-title">' +
+  header.querySelector('.topbar-right').insertAdjacentHTML('afterbegin','<button type="button" class="game-open" aria-expanded="false" aria-controls="team-game-panel">' + icon('bingo') + ' Games</button>');
+  header.insertAdjacentHTML('afterend','<div class="games-dock" hidden><button type="button" class="game-widget" aria-expanded="false" aria-controls="team-game-panel"></button></div>');
+  workspace.insertAdjacentHTML('beforeend','<aside id="team-game-panel" class="game-panel" hidden aria-labelledby="team-game-title">' +
     '<header><h2 id="team-game-title">Games</h2><button type="button" class="game-close" aria-label="Close games">' + icon('close') +
-    '</button></header><div class="game-panel-scroll"><div class="game-controls"></div><p class="game-scheduled" role="status" hidden></p><p class="game-error game-load-error" role="status" hidden></p>' +
-    '<div class="game-view"></div><div class="game-setup"></div></div></dialog>');
+    '</button></header><div class="game-panel-scroll" role="region" aria-label="Game details" tabindex="0"><div class="game-controls"></div><p class="game-scheduled" role="status" hidden></p><p class="game-error game-load-error" role="status" hidden></p>' +
+    '<div class="game-view"></div><div class="game-setup"></div></div></aside>');
   const $ = selector => workspace.querySelector(selector);
   const menuSwitch = $('.menu-switch'), shade = $('.menu-shade'), panel = $('.game-panel'), dock = $('.games-dock');
   const setup = $('.game-setup'), view = $('.game-view'), controls = $('.game-controls'), widget = $('.game-widget');
+  const gameButton = $('.game-open'), shell = $('.app-shell');
+  let opener = gameButton;
   let user = null, role = null, session = 0, timer, pending = null, data = null, menuOpen, viewKey, loadError = '';
   let needsRefresh = false, scheduling = false;
   const updates = createGameUpdates(refresh);
@@ -143,9 +145,9 @@ export function createGames({apiRequest}) {
   sidebar.addEventListener('change',event => {
     if (narrow.matches && event.target.matches('select')) toggleMenu(false);
   });
-  narrow.addEventListener('change',() => toggleMenu(!narrow.matches));
+  narrow.addEventListener('change',() => toggleMenu(!narrow.matches && panel.hidden));
   document.addEventListener('keydown',event => {
-    if (!menuOpen || !narrow.matches || workspace.hidden || panel.open) return;
+    if (!menuOpen || !narrow.matches || workspace.hidden) return;
     if (event.key === 'Escape') { event.preventDefault(); closeNav(); return; }
     if (event.key !== 'Tab') return;
     const items = [...sidebar.querySelectorAll('button,select,a[href]')].filter(el => !el.disabled && el.getClientRects().length);
@@ -164,7 +166,7 @@ export function createGames({apiRequest}) {
         (data.me ? '<strong class="widget-own">You #' + escape(data.me.rank) + '</strong>' : '') +
         (loadError ? '<span>Offline</span>' : '');
     }
-    if (!panel.open) return;
+    if (panel.hidden) return;
     if (role === 'supervisor' && !controls.children.length) {
       controls.innerHTML = '<button type="button" class="button secondary" data-game-new>Schedule a game</button>';
     }
@@ -219,16 +221,37 @@ export function createGames({apiRequest}) {
     viewKey = undefined;
     draw();
   }
-  function openPanel() {
-    if (!user || panel.open) return;
-    toggleMenu(false);
-    panel.showModal(); draw(); refresh();
+  // The workspace keeps its form and scroll position when its scroll container changes.
+  function setPanel(open, restoreFocus = true) {
+    if (open === !panel.hidden) return;
+    const scrollTop = open ? window.scrollY : shell.scrollTop;
+    if (open) toggleMenu(false);
+    panel.hidden = !open;
+    workspace.classList.toggle('games-split',open);
+    for (const button of [gameButton,widget]) button.setAttribute('aria-expanded',String(open));
+    if (open) {
+      shell.scrollTop = scrollTop;
+      onOpen?.();
+      $('.game-close').focus({preventScroll:true});
+      draw();
+      refresh();
+    } else {
+      window.scrollTo({top:scrollTop,behavior:'instant'});
+      if (restoreFocus) (opener.getClientRects().length ? opener : gameButton).focus({preventScroll:true});
+    }
   }
-  $('.game-open').onclick = openPanel;
-  widget.onclick = openPanel;
-  $('.game-close').onclick = () => panel.close();
+  function togglePanel(event) {
+    if (!user) return;
+    if (panel.hidden) opener = event.currentTarget;
+    setPanel(panel.hidden);
+  }
+  gameButton.onclick = togglePanel;
+  widget.onclick = togglePanel;
+  $('.game-close').onclick = () => setPanel(false);
+  panel.addEventListener('keydown',event => {
+    if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); setPanel(false); }
+  });
   panel.addEventListener('click',event => {
-    if (event.target === panel && event.clientX < panel.getBoundingClientRect().left) panel.close();
     if (event.target.closest('[data-game-new]') && role === 'supervisor') {
       $('.game-scheduled').hidden = true;
       setup.innerHTML = scheduleForm(); view.hidden = true; controls.hidden = true;
@@ -270,7 +293,7 @@ export function createGames({apiRequest}) {
   function closeSession() {
     session++; user=null; role=null; data=null; pending=null; needsRefresh=false; scheduling=false; loadError='';
     clearTimeout(timer); updates.close();
-    if (panel.open) panel.close();
+    setPanel(false,false);
     setup.replaceChildren(); controls.replaceChildren(); view.replaceChildren(); widget.replaceChildren();
     controls.hidden=false; view.hidden=false; viewKey=undefined; dock.hidden=true; $('.game-scheduled').hidden=true;
     toggleMenu(!narrow.matches);

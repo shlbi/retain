@@ -1,8 +1,6 @@
 import { DEFAULT_GOALS, METRICS } from './model.js';
 
 const $ = id => document.getElementById(id);
-const format = new Intl.NumberFormat('en-US', {maximumFractionDigits:1});
-const percent = (part, total) => total ? format.format(part * 100 / total) + '%' : '—';
 
 function create(tag, text, className) {
   const el = document.createElement(tag);
@@ -95,60 +93,4 @@ export function createTeamGoals(applyGoals) {
       form.reset(); agentList.replaceChildren(); status.textContent = ''; summarize(true);
     }
   };
-}
-
-function card(label, amount, detail) {
-  const el = create('article',undefined,'admin-card');
-  el.append(create('span',label),create('strong',amount),create('small',detail));
-  return el;
-}
-
-const sum = (rows, key) => rows.reduce((n,row) => n + row[key], 0);
-function periodTrend(days) {
-  const prev = days.slice(0,14), recent = days.slice(14);
-  const windows = [prev,recent];
-  const formatDate = day => new Date(day + 'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'});
-  const headers = windows.map(period => period.length ? formatDate(period[0].day) + ' – ' + formatDate(period.at(-1).day) : '—');
-  const measures = [
-    ['Logged calls', period => format.format(sum(period,'calls'))],
-    ['Overall save rate', period => percent(sum(period,'savedCalls'),sum(period,'eligibleCalls'))],
-    ['Mobile orders per 100 calls', period => sum(period,'calls') ? format.format(100*sum(period,'mobileOrders')/sum(period,'calls')) : '—'],
-    ['Mobiles sold', period => format.format(sum(period,'mobileLines'))]
-  ];
-  return table(['Measure',...headers], measures.map(([label,calc]) => [label,...windows.map(calc)]));
-}
-
-function table(headers, data) {
-  const scroll = create('div',undefined,'admin-table-wrap'), tableEl = create('table',undefined,'admin-table');
-  const thead = tableEl.createTHead().insertRow();
-  for (const header of headers) { const cell = create('th',header); cell.scope='col'; thead.append(cell); }
-  const tbody = tableEl.createTBody();
-  for (const row of data) {
-    const tr = tbody.insertRow();
-    row.forEach((col, i) => {
-      const cell = create(i === 0 ? 'th' : 'td',col);
-      if (i === 0) cell.scope = 'row';
-      tr.append(cell);
-    });
-  }
-  scroll.append(tableEl);
-  return scroll;
-}
-
-export function displayAdminStats(stats) {
-  $('admin-summary').replaceChildren(
-    card('Active agents',format.format(stats.activeAgents),format.format(stats.registered)+(stats.registered === 1 ? ' registered account' : ' registered accounts')),
-    card('Calls logged',format.format(stats.calls),'Past 28 days'),
-    card('Overall save rate',percent(stats.savedCalls,stats.eligibleCalls),format.format(stats.savedCalls)+' saved / '+format.format(stats.eligibleCalls)+' eligible'),
-    card('Mobiles sold',format.format(stats.mobileLines),format.format(stats.mobileOrders)+(stats.mobileOrders === 1 ? ' order' : ' orders'))
-  );
-  $('admin-trend').replaceChildren(periodTrend(stats.days));
-  $('admin-team-table').replaceChildren(stats.teams.length ? table(['Supervisor','Active / members','Calls','Save rate','Orders','Lines'],
-    stats.teams.map(t=>[t.username ?? 'Unassigned',t.activeAgents+' / '+t.members,format.format(t.calls),percent(t.savedCalls,t.eligibleCalls),format.format(t.mobileOrders),format.format(t.mobileLines)])) : create('p','No team results yet.'));
-  const {requests, errors, meanMs} = stats.technical;
-  $('admin-technical').replaceChildren(
-    card('Authenticated API requests',format.format(requests),'Past 28 days'),
-    card('Server errors',format.format(errors), requests ? percent(errors,requests)+' returned HTTP 5xx' : 'No requests measured yet'),
-    card('Mean handling time', meanMs === null ? '—' : format.format(meanMs)+' ms','Measured on the server')
-  );
 }

@@ -5,9 +5,11 @@ import { groupedRows, groupedTable, groupedCsv } from './tally-history.js';
 import { openStore, apiRequest, validDay } from './storage.js';
 import { historyEditor, readHistoryEditor, outcomeEditor } from './history-editor.js';
 import { createGames } from './games.js';
-import { createTeamGoals, displayAdminStats, displayRoster } from './team.js';
+import { createTeamGoals, displayRoster } from './team.js';
+import { displayAdminStats } from './performance.js';
 import { validateTallyState } from './tally-validation.js';
 import { signupRules } from './signup-rules.js';
+import { createAccountManagement } from './accounts.js';
 
 const paths = {
   overview:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -40,8 +42,15 @@ let selectedDay=dayKey(), previousDay=selectedDay, lastFocus=null, toastTimer;
 let sessionUser=null, authMode='login', authBusy=false, sessionEpoch=0, sessionRequest=0, authenticating=false;
 let pendingRead=null;
 let requestedView = location.hash.slice(1);
-const games = createGames({apiRequest});
+const games = createGames({apiRequest,onOpen:() => { if (view !== 'today') setView('today'); }});
 let teamContext = {role:'agent',agents:[]}, selectedAgentId = '', adminRequest = 0;
+let adminSection = 'performance';
+const adminActor = () => teamContext.role === 'admin' ? sessionUser?.id : null;
+const accountManagement = createAccountManagement((action,data) => {
+  const actor = adminActor();
+  if (!actor) throw new Error('An admin account is required.');
+  return apiRequest(action,data,actor);
+}, adminActor);
 const teamGoals = createTeamGoals(async (agentIds,goals) => {
   if (teamContext.role !== 'supervisor' || !sessionUser) throw new Error('Only supervisors can assign goals.');
   const actor = sessionUser.id;
@@ -146,11 +155,28 @@ function clearAdminReport() {
   adminRequest++;
   $('admin-report').hidden = true;
   $('admin-status').textContent = '';
-  for (const id of ['admin-summary','admin-trend','admin-team-table','admin-technical']) $(id).replaceChildren();
+  $('admin-report').replaceChildren();
+}
+function setAdminSection(section, load = true) {
+  adminSection = section;
+  for (const name of ['accounts','performance']) {
+    $('admin-'+name).hidden = section !== name;
+    const button = $('admin-open-'+name);
+    if (name === section) button.setAttribute('aria-current','page');
+    else button.removeAttribute('aria-current');
+  }
+  if (load && view === 'admin' && adminActor()) {
+    if (section === 'accounts') accountManagement.refresh();
+    else loadAdminStats();
+  }
 }
 function applyRole(context) {
   const oldRole = teamContext.role, oldAgent = selectedAgentId;
-  if (oldRole === 'admin' && context.role !== 'admin') clearAdminReport();
+  if (oldRole === 'admin' && context.role !== 'admin') {
+    clearAdminReport();
+    accountManagement.reset();
+    setAdminSection('performance',false);
+  }
   if (oldRole === 'supervisor' && context.role !== 'supervisor') teamGoals.reset();
   teamContext = context;
   if (sessionUser) games.openSession(sessionUser,context.role);
@@ -191,7 +217,7 @@ function setView(next,scroll=true) {
       watchingTeam() ? (name ? 'Daily outcomes and progress toward assigned goals.' : 'No agents are assigned to your team yet.') : 'Every conversation counts. See how yours add up.'],
     calls: ['Call log',watchingTeam() ? (name ? name+'’s call log' : 'Team call log') : 'Your call log.', 'Daily counts by outcome and service.'],
     goals: ['Goals','Team goals','Set a performance target for everyone or choose individual agents.'],
-    admin: ['Admin','Workspace performance','Usage, outcomes and technical performance over the past 28 days.']
+    admin: ['Admin','Admin',adminSection === 'accounts' ? 'Review sign-up requests and manage account access.' : 'See how agents use the tracker and how the app responds.']
   };
   const [label,title,description] = titles[view];
   $('breadcrumb-label').textContent=label;
@@ -201,8 +227,11 @@ function setView(next,scroll=true) {
   document.querySelector('.date-control').hidden = !isReport;
   document.querySelector('.add-call').hidden = !canLog() || !isReport;
   history.replaceState(null,'','#'+view);
-  if (scroll) window.scrollTo({top:0,behavior:'instant'});
-  if (view==='admin' && previous!=='admin') loadAdminStats();
+  if (scroll) {
+    const scroller = $('workspace-view').classList.contains('games-split') ? document.querySelector('.app-shell') : window;
+    scroller.scrollTo({top:0,behavior:'instant'});
+  }
+  if (view==='admin' && previous!=='admin') setAdminSection(adminSection);
 }
 
 async function loadAdminStats() {
@@ -210,7 +239,7 @@ async function loadAdminStats() {
   const request = ++adminRequest, epoch = sessionEpoch;
   $('admin-status').textContent = 'Loading report…';
   try {
-    const stats = await apiRequest('adminStats',undefined,sessionUser.id);
+    const stats = await apiRequest('adminPerformance',undefined,sessionUser.id);
     if (epoch !== sessionEpoch || request !== adminRequest || teamContext.role !== 'admin') return;
     displayAdminStats(stats);
     $('admin-report').hidden = false;
@@ -223,17 +252,22 @@ async function loadAdminStats() {
 }
 
 /** Make everything behind the phone entry sheet unavailable to keyboard and assistive navigation. */
-function setBackgroundInert(value){document.querySelectorAll('.sidebar,.topbar,.page-heading,.date-control,.summary-strip,.goals-panel,.recent-panel,.page-footer,.mobile-nav').forEach(el=>el.inert=value);}
-/** Focus call entry and use a modal sheet on phone screens. */
+function setBackgroundInert(value){document.querySelectorAll('.sidebar,.topbar,.games-dock,.page-heading,.date-control,.summary-strip,.goals-panel,.recent-panel,.page-footer,.mobile-nav').forEach(el=>el.inert=value);}
+/** The phone sheet is only needed in the standalone workspace. Split view keeps entry inline. */
 function openEntry(){
  if(!canLog())return;
  if(!ready)return showToast('Storage is not ready. Check the message above.');
  selectedDay=dayKey();allHistory=false;page=0;renderDashboard();if(view!=='today')setView('today');lastFocus=document.activeElement;
- if(window.matchMedia('(max-width: 760px)').matches){document.body.classList.add('entry-open');$('entry-backdrop').hidden=false;$('entry-panel').setAttribute('role','dialog');$('entry-panel').setAttribute('aria-modal','true');setBackgroundInert(true);}else $('entry-panel').scrollIntoView({block:'nearest',behavior:'smooth'});
+ if(window.matchMedia('(max-width: 760px)').matches && !$('workspace-view').classList.contains('games-split')){document.body.classList.add('entry-open');$('entry-backdrop').hidden=false;$('entry-panel').setAttribute('role','dialog');$('entry-panel').setAttribute('aria-modal','true');setBackgroundInert(true);}else $('entry-panel').scrollIntoView({block:'nearest',behavior:'smooth'});
  requestAnimationFrame(() => entry.focus());
 }
 /** Close the sheet while retaining a draft for the next opening. */
-function closeEntry(){document.body.classList.remove('entry-open');$('entry-backdrop').hidden=true;$('entry-panel').removeAttribute('role');$('entry-panel').removeAttribute('aria-modal');setBackgroundInert(false);if(lastFocus?.isConnected&&!lastFocus.closest('[hidden]'))lastFocus.focus({preventScroll:true});}
+function closeEntry(){
+ const wasSheet = document.body.classList.contains('entry-open');
+ document.body.classList.remove('entry-open');$('entry-backdrop').hidden=true;$('entry-panel').removeAttribute('role');$('entry-panel').removeAttribute('aria-modal');setBackgroundInert(false);
+ if(wasSheet && lastFocus?.isConnected && !lastFocus.closest('[hidden]')) lastFocus.focus({preventScroll:true});
+ lastFocus = null;
+}
 function showToast(message) {
   clearTimeout(toastTimer);
   $('toast').textContent = message;
@@ -386,7 +420,7 @@ async function syncFromStorage(){
  }
 }
 function authMessage(message){$('auth-error').textContent=message;$('auth-error').hidden=!message;}
-function setAuthBusy(value){authBusy=value;$('auth-form').querySelectorAll('input,button').forEach(el=>el.disabled=value);$('auth-mode-toggle').disabled=value;$('auth-submit').textContent=value?'Please wait…':authMode==='signup'?'Create account':'Sign in';}
+function setAuthBusy(value){authBusy=value;$('auth-form').querySelectorAll('input,button').forEach(el=>el.disabled=value);$('auth-mode-toggle').disabled=value;$('auth-submit').textContent=value?'Please wait…':authMode==='signup'?'Submit request':'Sign in';}
 function setPasswordVisible(visible) {
   $('password').type = visible ? 'text' : 'password';
   const toggle = document.querySelector('[data-action="toggle-password"]');
@@ -395,9 +429,11 @@ function setPasswordVisible(visible) {
 }
 function renderAuth() {
   const signup = authMode === 'signup';
-  $('auth-title').textContent = signup ? 'Create account' : 'Welcome back';
-  $('auth-submit').textContent = signup ? 'Create account' : 'Sign in';
-  $('auth-mode-toggle').textContent = signup ? 'Back to sign in' : 'Create an account';
+  $('auth-title').textContent = signup ? 'Request access' : 'Welcome back';
+  $('auth-submit').textContent = signup ? 'Submit request' : 'Sign in';
+  $('auth-mode-toggle').textContent = signup ? 'Back to sign in' : 'Request an account';
+  $('signup-role-field').hidden = !signup;
+  $('signup-confirmation').hidden = true;
   $('password').autocomplete = signup ? 'new-password' : 'current-password';
   for (const name of ['username', 'password']) {
     const input = $(name);
@@ -453,8 +489,19 @@ async function submitAuth(event) {
   sessionRequest++;
   setAuthBusy(true);
   try {
-    const result = await apiRequest(authMode, {username, password});
+    const signup = authMode === 'signup';
+    const credentials = signup ? {username,password,requestedRole:$('auth-form').elements.requestedRole.value} : {username,password};
+    const result = await apiRequest(authMode,credentials);
     $('password').value = '';
+    if (signup) {
+      if (result.status !== 'pending') throw new Error('Could not confirm your sign-up request. Refresh to check its status.');
+      authMode = 'login';
+      $('auth-form').elements.requestedRole.value = 'agent';
+      renderAuth();
+      $('signup-confirmation').textContent = 'Request submitted. You can sign in after an admin approves your account.';
+      $('signup-confirmation').hidden = false;
+      return;
+    }
     await enterWorkspace(result.user);
     channel?.postMessage({sessionChanged:true});
   } catch (error) {
@@ -478,6 +525,7 @@ $('detail-dialog').addEventListener('cancel', event => {
 });
 $('auth-form').addEventListener('submit',submitAuth);
 $('auth-form').addEventListener('input', ({target}) => {
+  $('signup-confirmation').hidden = true;
   if (target.getAttribute('aria-invalid') === 'true') {
     target.removeAttribute('aria-invalid');
     target.setAttribute('aria-describedby', target.name + '-rule');
@@ -498,6 +546,13 @@ $('team-agent').addEventListener('change',async () => {
   await syncFromStorage();
 });
 $('refresh-admin').addEventListener('click',loadAdminStats);
+for (const section of ['accounts','performance']) {
+  $('admin-open-'+section).addEventListener('click',() => {
+    if (section === adminSection) return;
+    setAdminSection(section);
+    setView('admin',false);
+  });
+}
 $('entry-backdrop').addEventListener('click',closeEntry);
 window.matchMedia('(max-width: 760px)').addEventListener('change',closeEntry);
 channel?.addEventListener('message',event=>{if(event.data?.sessionChanged)checkSession();else if(event.data?.userId===sessionUser?.id)syncFromStorage();});

@@ -46,7 +46,7 @@ Supabase Postgres stores grouped daily history and goals for each signed-in user
 
 Each submission includes a random retry token so retrying the same submission cannot add it twice. The server applies the grouped changes and daily counters in one transaction. Account-level outcome groups and daily mobile totals retain no association with individual orders or calls in the history.
 
-Create a separate tracker username and password. Each can contain 1–8 characters. Usernames cannot start with a digit, `p` or `P`. Existing accounts can continue to sign in with their original credentials.
+Use credentials created specifically for this tracker. Each can contain 1–8 characters. Usernames cannot start with a digit, `p` or `P`. Existing accounts can continue to sign in with their original credentials. To request access, choose **Agent** or **Supervisor** on the sign-up screen. After an admin approves the request, sign in with the same username and password.
 
 The app uses its own username/password accounts and an HttpOnly session cookie. Passwords are salted and hashed with scrypt. The server connects to the private database through same-origin Vercel functions. Database credentials stay on the server.
 
@@ -56,21 +56,23 @@ The app uses its own username/password accounts and an HttpOnly session cookie. 
 | --- | --- |
 | Agent | Log calls, correct personal history, view assigned goals and play the assigned team's game. |
 | Supervisor | Select a team member in the sidebar to view that person's percentages and call log. In **Goals**, choose a metric and apply its target to the whole current roster or selected agents. In **Games**, schedule team bingo and see player progress. |
-| Admin | Use the personal agent workspace, participate in an assigned team's game and open **Admin** for app-wide reporting. |
+| Admin | Use the personal agent workspace and play on an assigned team. Open **Admin** to see performance charts, review sign-ups, create accounts, assign roles and manage team membership. |
 
-Signups create agent accounts. A database operator assigns supervisors and team memberships as described in the deployment guide. An agent can belong to one supervisor. Public signup never grants a privileged role.
+In **Admin → Accounts**, review pending requests or create an account for someone who needs immediate access. The directory lets an admin change an existing user's role and supervisor. Assign the supervisor role first, then select that supervisor for each team member. Each agent or admin can belong to one team. Move a supervisor's team members before changing that supervisor's role. Admins can change their own team and retain their admin access.
 
 ### Team bingo
 
 Open **Games** to see the current board. A supervisor sets the incentive, start and end in local time, and a metric and target for each of nine squares. Choose a line (horizontal, vertical or diagonal) or blackout (all nine). A team can schedule multiple games with nonoverlapping time windows. The first confirmed submission of a tally scores once when its Eastern report date matches today and the server receives it during the game. Historical corrections update reporting independently because grouped history does not identify the time of each call. A wash contributes calls and any eligible additions or sales under the existing scoring rules.
 
-The compact leaderboard shows three players and the signed-in player's rank. A Supabase Realtime signal refreshes standings across devices after a new score. If the socket is unavailable, active games refresh every five seconds while the page is visible. Players who reach the winning pattern rank first, then players are ranked by completed squares. Ties share rank. Supervisors can expand each player's totals. The sidebar can be collapsed, and the game drawer takes half the desktop or the available width on a phone.
+The compact leaderboard shows three players and the signed-in player's rank. A Supabase Realtime signal refreshes standings across devices after a new score. If the socket is unavailable, active games refresh every five seconds while the page is visible. Players who reach the winning pattern rank first, then players are ranked by completed squares. Ties share rank. Supervisors can expand each player's totals.
+
+Open **Games** to keep the board beside the workspace. Both panes stay interactive, so an agent can log a call while watching the leaderboard. On narrow phones the panes stack and scroll independently. Opening or closing Games preserves the current call draft.
 
 ### Admin report
 
-Admin shows the last 28 Eastern reporting dates, with the latest 14 compared against the preceding 14. Team results use current roster membership. Overall save rate divides saved calls by eligible calls. Mobile orders per 100 calls counts orders, while mobiles sold counts lines. Active agents are agents or admins who logged calls. These are observed changes in logged work. Establishing a causal effect would require a comparison group or another evaluation design.
+**Admin → Performance** charts tracker activity over the last 7, 14 or 28 Eastern reporting dates. Daily call volume shows how much work agents entered. Daily active agents counts people who logged at least one call that day. Switch the volume chart to **Per active agent** to see calls divided by that day's active agents. For the full period, the average divides total calls by the sum of daily active agents. Past-day corrections can change the workload charts. Select a day on a chart or open **View daily values** for the underlying numbers.
 
-Technical reporting counts authenticated workspace API requests, HTTP 5xx responses and mean server handling time before telemetry. Totals started when this release was installed. A database outage can prevent a measurement from being recorded.
+The technical section at the bottom reports authenticated workspace API requests, HTTP 5xx responses and mean server handling time. The average uses measured requests, and days without a measurement have no latency value. Telemetry began with the first team release. A database outage can prevent a measurement from being recorded.
 
 ## Setup
 
