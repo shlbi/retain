@@ -71,13 +71,15 @@
   <aside class="sidebar">
     <div class="workspace-label">YOUR WORKSPACE</div>
     <p id="workspace-team-name" class="workspace-team-name" hidden></p>
-    <label id="team-picker" class="team-picker" hidden>Team member
-      <select id="team-agent" aria-label="Choose an agent"><option value="">No agents assigned</option></select>
-    </label>
     <nav class="desktop-nav" aria-label="Main navigation">
       <button data-view="today" class="nav-item active" aria-label="Overview" title="Overview"><span data-icon="overview"></span>Overview</button>
       <button data-view="calls" class="nav-item" aria-label="Call log" title="Call log"><span data-icon="calls"></span>Call log<span id="nav-count" class="nav-count">0</span></button>
       <button data-view="goals" class="nav-item" aria-label="Goals" title="Goals" hidden><span data-icon="target"></span>Goals</button>
+      <details id="team-picker" class="team-roster" open hidden>
+        <summary class="nav-item"><span data-icon="agents"></span>Agents<span class="roster-chevron" data-icon="chevron"></span></summary>
+        <ul id="team-agent-list" aria-label="Your agents"></ul>
+        <p id="team-roster-empty">No agents assigned.</p>
+      </details>
       <button data-view="admin" class="nav-item" aria-label="Admin" title="Admin" hidden><span data-icon="layers"></span>Admin</button>
     </nav>
     <div class="sidebar-bottom">

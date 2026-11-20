@@ -9,16 +9,32 @@ function create(tag, text, className) {
   return el;
 }
 
-/** Rebuild a roster only when it changes, preserving keyboard focus and the selected agent. */
+/** Update the list independently of the supervisor's open or closed disclosure. */
 export function displayRoster(agents, selectedId) {
-  const picker = $('team-agent');
-  if (picker.options.length !== Math.max(1, agents.length) ||
-      agents.some((agent, i) => picker.options[i]?.value !== agent.id || picker.options[i]?.text !== agent.username)) {
-    const options = agents.length ? agents.map(agent => new Option(agent.username,agent.id)) : [new Option('No agents assigned','')];
-    picker.replaceChildren(...options);
+  const list = $('team-agent-list');
+  const buttons = list.querySelectorAll('button');
+  const changed = buttons.length !== agents.length || agents.some((agent,i) =>
+    buttons[i].dataset.agentId !== agent.id || buttons[i].textContent !== agent.username);
+  if (changed) {
+    const focusedId = list.contains(document.activeElement) ? document.activeElement.dataset.agentId : null;
+    list.replaceChildren(...agents.map(agent => {
+      const row = create('li'), button = create('button', agent.username);
+      button.type = 'button';
+      button.dataset.agentId = agent.id;
+      row.append(button);
+      return row;
+    }));
+    if (focusedId) {
+      const next = agents.findIndex(agent => agent.id === focusedId);
+      const fallback = next < 0 ? agents.findIndex(agent => agent.id === selectedId) : next;
+      (list.children[fallback]?.firstElementChild || $('team-picker').querySelector('summary')).focus();
+    }
   }
-  picker.value = selectedId || '';
-  picker.disabled = !agents.length;
+  for (const button of list.querySelectorAll('button')) {
+    if (button.dataset.agentId === selectedId) button.setAttribute('aria-current','true');
+    else button.removeAttribute('aria-current');
+  }
+  $('team-roster-empty').hidden = agents.length > 0;
 }
 
 export function createTeamGoals(applyGoals) {

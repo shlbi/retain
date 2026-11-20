@@ -67,7 +67,7 @@ The [database schema guide](docs/SCHEMA.md) explains how accounts, memberships, 
 | Role | Workspace |
 | --- | --- |
 | Agent | Log calls, correct personal history, view assigned goals and play the assigned team's game. |
-| Supervisor | Select a team member in the sidebar to view that person's percentages and call log. In **Goals**, choose a metric and apply its target to the whole current roster or selected agents. In **Games**, schedule team bingo and see player progress. |
+| Supervisor | Select a name in **Agents**, the expandable list below **Goals**, to view that person's percentages and call log. The list starts open and stays open when switching agents. In **Goals**, apply a target to the whole roster or selected agents. In **Games**, schedule team bingo and see player progress. |
 | Admin | Use the personal agent workspace and play on an assigned team. Open **Admin** to see performance charts, review sign-ups, create accounts, assign roles and manage named teams. |
 
 **Admin → Teams** lists every active team with its supervisor, member count and an **Edit** button. Choose **Create team** at the top right, enter the team name, pick an available supervisor and check the agents to include. The checklist shows each person's current team. Submit the form once to save the team and its roster together.

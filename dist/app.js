@@ -13,6 +13,7 @@ import { createAccountManagement } from './accounts.js';
 import { createNamedTeams } from './named-teams.js';
 
 const paths = {
+  agents:'<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2m1-15a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 4v2"/>',
   overview:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   calls:'<path d="M8 3H5a2 2 0 0 0-2 2c0 8.8 7.2 16 16 16a2 2 0 0 0 2-2v-3l-5-2-2 2a14 14 0 0 1-6-6l2-2-2-5Z"/>',
   target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".7"/>',
@@ -192,6 +193,7 @@ function applyRole(context) {
   const supervisor = watchingTeam(), admin = context.role === 'admin';
   $('workspace-view').classList.toggle('supervising',supervisor);
   $('team-picker').hidden = !supervisor;
+  if (supervisor && oldRole !== 'supervisor') $('team-picker').open = true;
   displayRoster(context.agents,selectedAgentId);
   teamGoals.update(context.agents);
   document.querySelector('.entry-column').hidden = supervisor;
@@ -600,13 +602,20 @@ $('auth-request-password').addEventListener('click',() => switchAuthMode('reques
 $('auth-enter-code').addEventListener('click',() => switchAuthMode('completePasswordChange'));
 window.addEventListener('session-expired',event=>{if(event.detail?.userId===sessionUser?.id)showSignIn('Your session changed or expired. Sign in again.');});
 $('report-date').addEventListener('change',event=>{const value=event.target.value;if(validDay(value)&&value<=dayKey()){selectedDay=value;allHistory=false;page=0;renderDashboard();}});
-$('team-agent').addEventListener('change',async () => {
-  if (!watchingTeam() || !teamContext.agents.some(agent => agent.id === $('team-agent').value)) return;
-  selectedAgentId = $('team-agent').value;
+$('team-agent-list').addEventListener('click',async event => {
+  const agentId = event.target.closest('button[data-agent-id]')?.dataset.agentId;
+  if (!watchingTeam() || !teamContext.agents.some(agent => agent.id === agentId)) return;
+  const report = view === 'calls' ? 'calls' : 'today';
+  if (selectedAgentId === agentId && ready) {
+    if (view !== report) setView(report);
+    return;
+  }
+  selectedAgentId = agentId;
+  displayRoster(teamContext.agents,selectedAgentId);
   // Invalidate pending reads before switching so a slower response cannot paint the previous agent.
   pendingRead = null; ready = false; state = emptyState(); page = 0;
   $('detail-dialog').close();setBusy(false);renderDashboard();
-  setView(view === 'calls' ? 'calls' : 'today');
+  setView(report);
   $('storage-status').textContent = 'Loading team member…';
   await syncFromStorage();
 });

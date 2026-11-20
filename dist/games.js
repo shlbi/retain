@@ -143,15 +143,12 @@ export function createGames({apiRequest,onOpen}) {
   sidebar.addEventListener('click',event => {
     if (narrow.matches && event.target.closest('[data-view],[data-action]')) toggleMenu(false);
   });
-  sidebar.addEventListener('change',event => {
-    if (narrow.matches && event.target.matches('select')) toggleMenu(false);
-  });
   narrow.addEventListener('change',() => toggleMenu(!narrow.matches && panel.hidden));
   document.addEventListener('keydown',event => {
     if (!menuOpen || !narrow.matches || workspace.hidden) return;
     if (event.key === 'Escape') { event.preventDefault(); closeNav(); return; }
     if (event.key !== 'Tab') return;
-    const items = [...sidebar.querySelectorAll('button,select,a[href]')].filter(el => !el.disabled && el.getClientRects().length);
+    const items = [...sidebar.querySelectorAll('button,summary,a[href]')].filter(el => !el.disabled && el.getClientRects().length);
     if (event.shiftKey && items[0]===document.activeElement) { event.preventDefault(); items.at(-1)?.focus(); }
     else if (!event.shiftKey && items.at(-1)===document.activeElement) { event.preventDefault(); items[0]?.focus(); }
   });
