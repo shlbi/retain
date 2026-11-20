@@ -9,6 +9,7 @@ const ACTION_FIELDS = {signup:['username','password','requestedRole'],login:['us
   adminCreateAccount:['username','password','role','supervisorId'],adminReviewSignup:['requestId','decision','role','supervisorId'],
   adminAssignAccount:['accountId','role','supervisorId','expectedRole','expectedSupervisorId'],
   adminSaveTeam:['supervisorId','name','expectedName'],adminAddTeamMembers:['supervisorId','members'],
+  adminSaveTeamDetails:['originalSupervisorId','supervisorId','name','expectedName','expectedMemberIds','members'],
   agentState:['agentId'],teamGoals:['agentIds','goals'],gameSchedule:['title','incentive','startsAt','endsAt','pattern','squares']};
 const READ_ACTIONS = {
   state:'workspace_tally_state', teamContext:'workspace_team_context',
@@ -132,7 +133,7 @@ function teamName(value) {
 }
 /** Bind each transfer to the membership the admin saw when selecting the roster. */
 function validateMemberChanges(members, supervisorId) {
-  if (!Array.isArray(members) || !members.length) throw VALIDATION('Choose at least one agent to assign.');
+  if (!Array.isArray(members)) throw VALIDATION('Include the list of selected agents.');
   const seen = new Set();
   for (const member of members) {
     if (!member || typeof member !== 'object' || Array.isArray(member) ||
@@ -143,6 +144,22 @@ function validateMemberChanges(members, supervisorId) {
     const id = member.id.toLowerCase();
     if (id === supervisorId.toLowerCase() || seen.has(id)) throw VALIDATION('Choose each agent once and exclude the team supervisor.');
     seen.add(id);
+  }
+}
+/** An edit includes the original team and roster so stale saves can be rejected atomically. */
+function validatePriorTeam(originalSupervisorId, expectedName, expectedMemberIds) {
+  if (!Array.isArray(expectedMemberIds) || !expectedMemberIds.every(isUuid) ||
+      new Set(expectedMemberIds.map(id => id.toLowerCase())).size !== expectedMemberIds.length) {
+    throw VALIDATION('Include each original team member once.');
+  }
+  if (originalSupervisorId === null) {
+    if (expectedName !== null || expectedMemberIds.length) throw VALIDATION('A new team must start with an empty original roster and no original name.');
+  } else {
+    if (!isUuid(originalSupervisorId)) throw VALIDATION('Choose a current team to edit.');
+    teamName(expectedName);
+    if (expectedMemberIds.some(id => id.toLowerCase() === originalSupervisorId.toLowerCase())) {
+      throw VALIDATION('The original roster must exclude its supervisor.');
+    }
   }
 }
 /** A management session may see tracker identities and assignments, never credential records. */
@@ -245,7 +262,19 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
           const {supervisorId,members} = body;
           if (!isUuid(supervisorId)) throw VALIDATION('Choose a team to receive the agents.');
           validateMemberChanges(members,supervisorId);
+          if (!members.length) throw VALIDATION('Choose at least one agent to assign.');
           result = await db.rpc('workspace_admin_add_team_members',{p_user_id:user.id,p_supervisor_id:supervisorId,p_members:members});
+          break;
+        }
+        case 'adminSaveTeamDetails': {
+          const {originalSupervisorId,supervisorId,name,expectedName,expectedMemberIds,members} = body;
+          if (!isUuid(supervisorId)) throw VALIDATION('Choose the team supervisor.');
+          validatePriorTeam(originalSupervisorId,expectedName,expectedMemberIds);
+          validateMemberChanges(members,supervisorId);
+          result = await db.rpc('workspace_admin_save_team_details',{
+            p_user_id:user.id,p_original_supervisor_id:originalSupervisorId,p_supervisor_id:supervisorId,
+            p_name:teamName(name),p_expected_name:expectedName,p_expected_member_ids:expectedMemberIds,p_members:members
+          });
           break;
         }
         case 'adminCreateAccount': {
@@ -321,7 +350,7 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
         }
         default: throw VALIDATION('Choose a supported action.');
       }
-      if (['adminCreateAccount','adminReviewSignup','adminAssignAccount','adminSaveTeam','adminAddTeamMembers'].includes(body.action)) {
+      if (['adminCreateAccount','adminReviewSignup','adminAssignAccount','adminSaveTeam','adminAddTeamMembers','adminSaveTeamDetails'].includes(body.action)) {
         if (result?.ok !== true) throw new ApiError(503,'STORAGE','Could not confirm this change. Refresh the directory to check its status.');
         return send(200,{ok:true});
       }

@@ -368,6 +368,73 @@ test('named team and roster updates bind the verified admin and the prior assign
   for (const body of [save,transfer]) assert.equal((await request(denied,{cookie,body})).status,403);
 });
 
+test('the team editor submits the name, supervisor and complete roster as one authenticated write',async()=>{
+  const rpcName='workspace_admin_save_team_details';
+  const db=fakeDatabase(), rpc=db.rpc.bind(db), writes=[], cookie=session();
+  db.rpc=(name,args)=>{
+    if (name !== rpcName) return rpc(name,args);
+    writes.push(args);
+    return {ok:true,private_field:'not returned'};
+  };
+  const handler=createHandler({env:ENV,database:db});
+  const create={action:'adminSaveTeamDetails',originalSupervisorId:null,supervisorId:USER_B.id,
+    name:' North ',expectedName:null,expectedMemberIds:[],members:[{id:USER_A.id,expectedSupervisorId:requestId}]};
+  const edit={...create,originalSupervisorId:USER_B.id,supervisorId:requestId,
+    name:'Northwest',expectedName:'North',expectedMemberIds:[USER_A.id],members:[]};
+  assert.equal((await request(handler,{body:create})).status,401);
+  assert.equal((await request(handler,{cookie,expected:USER_B.id,body:create})).status,401);
+  for (const body of [create,edit]) {
+    const response=await request(handler,{cookie,body});
+    assert.equal(response.status,200);
+    assert.deepEqual(response.body,{ok:true});
+  }
+  assert.deepEqual(writes,[
+    {p_user_id:USER_A.id,p_original_supervisor_id:null,p_supervisor_id:USER_B.id,p_name:'North',
+      p_expected_name:null,p_expected_member_ids:[],p_members:create.members},
+    {p_user_id:USER_A.id,p_original_supervisor_id:USER_B.id,p_supervisor_id:requestId,p_name:'Northwest',
+      p_expected_name:'North',p_expected_member_ids:[USER_A.id],p_members:[]}
+  ]);
+  const forbidden=createHandler({env:ENV,database:fakeDatabase({fail:{[rpcName]:new ApiError(403,'FORBIDDEN','Only admins may manage teams.')}})});
+  assert.equal((await request(forbidden,{cookie,body:create})).status,403);
+  const unconfirmed=createHandler({env:ENV,database:fakeDatabase()});
+  assert.equal((await request(unconfirmed,{cookie,body:edit})).status,503);
+});
+
+test('the team editor rejects invalid or incomplete snapshots before any write',async()=>{
+  const db=fakeDatabase(), handler=createHandler({env:ENV,database:db}), cookie=session();
+  const edit={action:'adminSaveTeamDetails',originalSupervisorId:USER_B.id,supervisorId:USER_B.id,
+    name:'North',expectedName:'North',expectedMemberIds:[requestId],members:[{id:requestId,expectedSupervisorId:USER_B.id}]};
+  for (const patch of [
+    {userId:USER_A.id},{originalSupervisorId:'bad'},{originalSupervisorId:undefined},{supervisorId:null},
+    {name:'   '},{name:'Night\nCrew'},{name:'a'.repeat(61)},{expectedName:null},{expectedName:undefined},
+    {originalSupervisorId:null,expectedMemberIds:[]},{originalSupervisorId:null,expectedName:null},
+    {expectedMemberIds:undefined},{expectedMemberIds:['bad']},{expectedMemberIds:[USER_B.id]},
+    {expectedMemberIds:[requestId,requestId.toUpperCase()]},{members:null},{members:undefined},
+    {members:[{id:requestId}]},{members:[{id:requestId,expectedSupervisorId:'bad'}]},
+    {members:[{id:USER_B.id,expectedSupervisorId:null}]},{members:[{...edit.members[0],role:'agent'}]},
+    {members:[edit.members[0],{...edit.members[0],id:requestId.toUpperCase()}]}
+  ]) {
+    assert.equal((await request(handler,{cookie,body:{...edit,...patch}})).status,400);
+  }
+  assert.ok(!db.calls.some(call=>call.name==='workspace_admin_save_team_details'));
+});
+
+test('team editor database conflicts and missing migrations have specific safe messages',async()=>{
+  for (const [category,pgCode,status,expectedCode,word] of [
+    ['CONFLICT','P0001',409,'CONFLICT','assignments'],
+    ['TEAM_NAME_TAKEN','P0001',409,'TEAM_NAME_TAKEN','team name'],
+    ['SUPERVISOR_TAKEN','P0001',409,'SUPERVISOR_TAKEN','supervisor'],
+    ['INVALID_TEAM','P0001',400,'INVALID_TEAM','team'],
+    ['unknown','23505',409,'CONFLICT','team'],
+    ['unknown','PGRST202',503,'SETUP','Supabase']
+  ]) {
+    const db=createDatabase({SUPABASE_URL:'https://database.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_example'},
+      async()=>({ok:false,json:async()=>({code:pgCode,message:category+': private database details'})}));
+    await assert.rejects(db.rpc('workspace_admin_save_team_details'),error=>
+      error.status===status && error.code===expectedCode && error.message.includes(word) && !error.message.includes('private'));
+  }
+});
+
 test('game scheduling has no team override and game reads use the current session actor',async()=>{
   const db = fakeDatabase(), cookie = session(), handler = createHandler({env:ENV,database:db});
   const schedule = {action:'gameSchedule',title:'Bingo',incentive:'',startsAt:'2026-11-19T12:00:00Z',

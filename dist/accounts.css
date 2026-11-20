@@ -70,34 +70,52 @@
 }
 @media(max-width:760px) {.account-form :is(input:not([type=radio]),select),.request-row select,.directory-search input {font-size:16px}}
 
-.teams-card {max-width:860px}
+.teams-card .account-card-heading {flex-wrap:nowrap}
 .team-error {margin:0;padding:10px 12px;border-inline-start:3px solid #bf2538;border-radius:4px;background:#fff0f1;color:#95162a;font-size:14px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}
 .team-error:empty {position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%)}
-#teams-error:not(:empty) {margin-bottom:14px}
-#team-member-accounts {justify-self:start}
+#teams-error:not(:empty),#team-save-error:not(:empty) {margin-bottom:12px}
 .account-team {min-width:0;overflow-wrap:anywhere}
-.teams-card h3 {margin:0;color:#233d59;font-size:17px;line-height:1.4;overflow-wrap:anywhere}
-.teams-actions {display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.teams-card .account-form {margin:16px 0;background:#f2f6fb;border:1px solid #d9e4f0;border-radius:8px;padding:16px}
-.teams-card .account-form > fieldset {gap:12px}
-.teams-card .account-form > fieldset > legend {font-size:16px}
-.team-detail {margin-top:20px}
-.team-detail > label {max-width:360px;font-size:13px}
-.team-detail select {height:40px;font:inherit;font-size:14px;color:#233d59;background:#fff;border:1px solid #cbd8e9;border-radius:7px;padding:6px 10px;min-width:0;width:100%}
-.team-roster-header {display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:20px 0;border-bottom:1px solid #dce6f0;margin-bottom:18px}
-.team-roster-header h3 {font-size:21px}
-.team-roster-header .account-hint {margin:5px 0 0}
-.team-members {padding:0;margin:12px 0 0;list-style:none}
-.team-members li {display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-top:1px solid #e3eaf2;padding:12px 0;font-size:14px}
-.team-members span,.available-members small {color:#526b86;font-weight:400}
-.available-members {display:grid;gap:3px;max-height:17rem;overflow:auto;overscroll-behavior:contain}
-.available-members label {display:flex;align-items:center;gap:10px;padding:7px 9px;cursor:pointer}
-.available-members label:has(input:checked) {background:#e3eefc;border-radius:6px}
-.available-members label span {display:grid;gap:2px}
-.available-members input[type=checkbox] {width:18px;height:18px;min-height:0;flex:none;accent-color:#2563a6}
-.available-members p {margin:6px 0;font-size:14px}
-#team-move-note:empty {display:none}
-#team-move-note {margin:0}
+.teams-list {margin:16px 0 0;padding:0;list-style:none}
+.teams-list:empty {margin:0}
+.teams-list li {border-top:1px solid #dce6f0;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 0}
+.teams-list li:last-child {padding-bottom:0}
+.teams-list li>div {min-width:0}
+.teams-list h3 {margin:0;color:#233d59;font-size:17px;line-height:1.4;overflow-wrap:anywhere}
+.teams-list p {display:flex;gap:3px 14px;flex-wrap:wrap;margin:3px 0 0;color:#536c85;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
+.teams-list button {min-width:58px;flex:none}
+#teams-retry {margin-top:12px}
+#team-dialog {max-height:calc(100% - 24px);max-height:calc(100dvh - 24px);overflow:hidden}
+#team-dialog[open],#team-editor {display:flex;flex-direction:column}
+#team-dialog .dialog-heading {flex:none;padding-bottom:16px;border-bottom:1px solid #dce6f0}
+#team-dialog .dialog-heading h2 {margin:0;font-size:20px}
+#team-editor {min-height:0}
+.team-editor-body {min-height:0;overflow:auto;overscroll-behavior:contain;padding:18px 24px}
+#team-fields,.team-agent-field {min-width:0;border:0;padding:0;margin:0}
+#team-fields {display:grid;gap:16px}
+.team-agent-field legend {display:flex;gap:8px;align-items:baseline}
+#team-selection-count {font-size:13px;color:#576f88;font-weight:400}
+.available-members {max-height:14rem;overflow:auto;overscroll-behavior:contain;margin-top:8px;border:1px solid #dae4f0;border-radius:7px}
+.available-members label {display:flex;align-items:center;gap:10px;padding:8px 10px;min-height:44px;cursor:pointer}
+.available-members label+label {border-top:1px solid #e5ecf5}
+.available-members label:has(input:checked) {background:#eaf2ff}
+.available-members label:focus-within {outline:2px solid #255f9b;outline-offset:-2px}
+.available-members label span {display:grid;gap:1px;min-width:0;overflow-wrap:anywhere}
+.available-members small {color:#526b86;font-weight:400}
+.available-members input[type=checkbox] {width:18px;height:18px;min-height:0;padding:0;flex:none;accent-color:#2563a6}
+.available-members p {margin:0;padding:12px;font-size:14px;color:#526b86}
+#team-supervisor-help {margin-top:-8px}
+#team-move-note:not(:empty),#team-members-more {margin-top:8px}
+.team-editor-footer {flex:none;padding:14px 24px;border-top:1px solid #dce6f0}
+#team-editor .dialog-actions {margin:0}
+#team-editor .dialog-actions .button {min-height:40px;font-size:14px}
+#team-editor [aria-invalid=true] {border-color:#bf2538}
+@media(max-width:480px) {
+  .admin-sections {gap:4px}
+  .admin-sections button {padding-inline:10px}
+  #team-dialog {width:calc(100% - 20px)}
+  .team-editor-body,.team-editor-footer {padding:14px 16px}
+  #team-dialog .dialog-heading {padding:12px 16px}
+  .teams-list button,#team-editor .dialog-actions .button {min-height:44px}
+}
 .workspace-team-name,.game-team-name {margin:0;color:#23598d;font-weight:650;font-size:14px;overflow-wrap:anywhere}
 .workspace-team-name {padding:8px 12px}
-@media(max-width:760px) {.team-detail select {font-size:16px}}

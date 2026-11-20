@@ -4,253 +4,293 @@ const make = (tag, text) => {
   if (text !== undefined) node.textContent = text;
   return node;
 };
+const pageSize = 50;
 
-/** Bind each edit to the team and membership snapshot the admin actually reviewed. */
+/** The editor submits the full roster together with the directory snapshot the admin reviewed. */
 export function createNamedTeams(request, actorId) {
-  const picker = $('managed-team'), nameForm = $('team-name-form'), memberForm = $('team-member-form');
-  const status = $('teams-status'), search = $('team-members-search');
-  const checked = new Set();
-  const batchSize = 50;
-  let directory, teamId = '', editingName = null, version = 0, busy = false, visibleLimit = batchSize;
-  const current = () => directory?.teams.find(team => team.supervisorId === teamId);
-  const username = id => directory?.accounts.find(person => person.id === id)?.username ?? '';
-  const freeSupervisors = () => directory.accounts.filter(person =>
-    person.role === 'supervisor' && !directory.teams.some(team => team.supervisorId === person.id));
-  const candidates = () => directory.accounts.filter(person => person.role !== 'supervisor' && person.supervisorId !== teamId);
+  const list = $('teams-list'), dialog = $('team-dialog'), form = $('team-editor');
+  const {teamName, supervisorId} = form.elements;
+  const search = $('team-members-search'), status = $('teams-status'), errorBox = $('team-save-error');
+  const selected = new Set();
+  let directory = null, original = null, expectedMemberIds = [];
+  let epoch = 0, loading = false, saving = false, visibleLimit = pageSize;
 
-  function setBusy(value) {
-    busy = value;
-    $('teams-refresh').disabled = value;
-    $('teams-create').disabled = value || !directory || !freeSupervisors().length;
-    picker.disabled = value;
-    $('teams-rename').disabled = $('teams-add').disabled = value;
-    nameForm.querySelector('fieldset').disabled = memberForm.querySelector('fieldset').disabled = value;
-  }
-
-  function closeForms() {
-    editingName = null;
-    nameForm.hidden = memberForm.hidden = true;
-    nameForm.reset(); search.value = ''; checked.clear(); visibleLimit = batchSize;
-    $('available-members').replaceChildren();
-    $('team-name-error').textContent = $('team-member-error').textContent = '';
-    nameForm.elements.teamName.removeAttribute('aria-invalid');
-    $('teams-add').setAttribute('aria-expanded','false');
-  }
-
-  function render() {
-    closeForms();
-    const teams = directory.teams;
-    if (!current()) teamId = teams[0]?.supervisorId || '';
-    const team = current();
-    $('teams-count').hidden = false;
-    $('teams-count').textContent = teams.length;
-    const canCreate = freeSupervisors().length > 0;
-    $('teams-empty').hidden = !!team && canCreate;
-    $('teams-empty').textContent = canCreate ? 'Choose a name and supervisor to create a team. Then select the agents to assign.'
-      : 'To create another team, assign the Supervisor role to an available account.';
-    if (!team && !canCreate) $('teams-empty').textContent = 'Assign the Supervisor role to an account, then create your first team.';
-    $('teams-go-accounts').hidden = canCreate;
-    $('team-detail').hidden = !team;
-    picker.replaceChildren(...teams.map(t => new Option(t.name,t.supervisorId)));
-    if (!team) return;
-    picker.value = teamId;
-    $('managed-team-title').textContent = team.name;
-    $('managed-team-supervisor').textContent = 'Supervisor · ' + username(teamId);
-    const members = directory.accounts.filter(person => person.supervisorId === teamId);
-    $('members-count').textContent = members.length;
-    $('team-no-members').hidden = members.length > 0;
-    $('managed-roster').replaceChildren(...members.map(person => {
-      const item = make('li'), role = make('span',person.role === 'admin' ? 'Admin' : 'Agent');
-      item.append(make('strong',person.username),role);
-      return item;
+  function renderList() {
+    const teams = directory?.teams ?? [];
+    const accounts = new Map(directory?.accounts.map(person => [person.id, person]));
+    const counts = new Map();
+    for (const person of accounts.values()) {
+      if (person.supervisorId) counts.set(person.supervisorId,(counts.get(person.supervisorId) ?? 0) + 1);
+    }
+    $('teams-count').hidden = !directory;
+    $('teams-count').textContent = directory ? teams.length : '';
+    $('teams-empty').hidden = !directory || teams.length > 0;
+    list.replaceChildren(...teams.map(team => {
+      const row = make('li'), title = make('div'), details = make('p');
+      const count = counts.get(team.supervisorId) || 0;
+      title.append(make('h3',team.name));
+      details.append(make('span','Supervisor · ' + (accounts.get(team.supervisorId)?.username || 'Unknown')),
+        make('span',count + (count === 1 ? ' agent' : ' agents')));
+      title.append(details);
+      const edit = make('button','Edit');
+      edit.type = 'button';
+      edit.className = 'button secondary';
+      edit.dataset.team = team.supervisorId;
+      edit.setAttribute('aria-label','Edit ' + team.name);
+      edit.setAttribute('aria-haspopup','dialog');
+      row.append(title,edit);
+      return row;
     }));
   }
 
-  function reset() {
-    version++; directory = null; teamId = '';
-    closeForms(); status.textContent = ''; $('teams-error').textContent = '';
-    for (const id of ['managed-team','managed-team-title','managed-team-supervisor','managed-roster','members-count','teams-count']) $(id).replaceChildren();
-    nameForm.elements.supervisorId.replaceChildren();
-    for (const id of ['teams-count','teams-empty','teams-go-accounts','team-detail']) $(id).hidden = true;
-    setBusy(false);
+  function selectionSummary() {
+    const transfers = directory.accounts.filter(person => selected.has(person.id) && person.supervisorId && person.supervisorId !== original?.supervisorId).length;
+    $('team-selection-count').textContent = selected.size + ' selected';
+    $('team-move-note').textContent = transfers ? transfers + (transfers === 1 ? ' selected agent will move' : ' selected agents will move') + ' from another team.' : '';
   }
 
-  async function load(epoch) {
-    const result = await request('adminAccounts');
-    if (version !== epoch) return;
-    if (!Array.isArray(result?.teams)) {
-      const error = new Error('Team management needs the named teams database update. Apply the update in Supabase, then refresh Teams.');
-      error.code = 'TEAM_SETUP';
-      throw error;
+  function openAccounts() {
+    closeEditor();
+    $('admin-open-accounts').click();
+    $('admin-open-accounts').focus();
+  }
+
+  function renderAgents() {
+    const query = search.value.trim().toLowerCase();
+    const matches = directory.accounts.filter(person => person.role !== 'supervisor' && person.username.toLowerCase().includes(query));
+    const names = new Map(directory.teams.map(team => [team.supervisorId,team.name]));
+    const labels = matches.slice(0,visibleLimit).map(person => {
+      const label = make('label'), input = make('input'), detail = make('span');
+      input.type = 'checkbox';
+      input.value = person.id;
+      input.checked = selected.has(person.id);
+      const affiliation = names.get(person.supervisorId) || 'Unassigned';
+      detail.append(make('strong',person.username),make('small',(person.role === 'admin' ? 'Admin · ' : '') + affiliation));
+      label.append(input,detail);
+      return label;
+    });
+    if (!labels.length) {
+      const empty = make('p',query ? 'No matching agents. ' : 'No agent accounts yet. ');
+      const manage = make('button','Manage accounts');
+      manage.type = 'button';
+      manage.className = 'text-button';
+      manage.addEventListener('click',openAccounts);
+      empty.append(manage);
+      labels.push(empty);
     }
-    directory = result;
-    render();
+    $('available-members').replaceChildren(...labels);
+    $('team-members-more').hidden = matches.length <= visibleLimit;
+    selectionSummary();
+  }
+
+  function updateControls() {
+    $('team-fields').disabled = !directory || loading || saving;
+    $('team-save').disabled = !directory || loading || saving || !$('team-supervisor-help').hidden;
+    $('team-cancel').disabled = $('team-close').disabled = saving;
+  }
+
+  function populateEditor() {
+    const occupied = new Set(directory.teams.map(team => team.supervisorId));
+    const choices = directory.accounts.filter(person => person.role === 'supervisor' && (!occupied.has(person.id) || person.id === original?.supervisorId));
+    const prompt = choices.length ? 'Choose a supervisor' : 'No available supervisors';
+    supervisorId.replaceChildren(new Option(prompt,''),...choices.map(person => new Option(person.username,person.id)));
+    supervisorId.value = original?.supervisorId ?? (choices.length === 1 ? choices[0].id : '');
+    $('team-supervisor-help').hidden = choices.length > 0;
+    teamName.value = original?.name ?? '';
+    expectedMemberIds = original ? directory.accounts.filter(person => person.supervisorId === original.supervisorId).map(person => person.id) : [];
+    selected.clear();
+    expectedMemberIds.forEach(id => selected.add(id));
+    renderAgents();
+    $('team-load-status').textContent = '';
+    updateControls();
+  }
+
+  function closeEditor(focusTeamId) {
+    dialog.close();
+    form.reset();
+    original = null;
+    expectedMemberIds = [];
+    selected.clear();
+    visibleLimit = pageSize;
+    supervisorId.replaceChildren();
+    $('available-members').replaceChildren();
+    for (const id of ['team-dialog-title','team-save-error','team-load-status','team-selection-count','team-move-note']) $(id).textContent = '';
+    $('team-supervisor-help').hidden = $('team-reload').hidden = $('team-members-more').hidden = true;
+    for (const field of [teamName,supervisorId]) field.removeAttribute('aria-invalid');
+    if (focusTeamId !== undefined) {
+      const target = [...list.querySelectorAll('button')].find(button => button.dataset.team === focusTeamId);
+      (target || $('teams-create')).focus();
+    }
+  }
+
+  function reset() {
+    epoch++;
+    loading = saving = false;
+    directory = null;
+    closeEditor();
+    renderList();
+    status.textContent = $('teams-error').textContent = '';
+    $('teams-retry').hidden = true;
+    updateControls();
+  }
+
+  async function readDirectory() {
+    const result = await request('adminAccounts');
+    if (!Array.isArray(result?.teams) || !Array.isArray(result.accounts)) {
+      throw new Error('Apply the named teams database update in Supabase, then reload Teams.');
+    }
+    return result;
   }
 
   async function refresh() {
-    if (busy || !actorId()) return;
-    const epoch = version;
-    status.textContent = 'Loading teams…';
+    if (loading || saving || !actorId() || (dialog.open && directory)) return;
+    const version = epoch;
+    loading = true;
+    directory = null;
+    renderList();
     $('teams-error').textContent = '';
-    setBusy(true);
+    $('teams-retry').hidden = true;
+    status.textContent = 'Loading teams…';
     try {
-      await load(epoch);
-      if (version === epoch) status.textContent = '';
+      const result = await readDirectory();
+      if (version !== epoch) return;
+      directory = result;
+      renderList();
+      if (dialog.open) populateEditor();
     } catch (error) {
       if (version !== epoch) return;
-      if (error.code === 'FORBIDDEN' || error.code === 'TEAM_SETUP') reset();
-      status.textContent = '';
-      $('teams-error').textContent = error.message || 'Could not load teams. Refresh to try again.';
-    } finally { if (version === epoch) setBusy(false); }
-  }
-
-  async function save(action, payload, message, nextId) {
-    if (busy || !directory || !actorId()) return;
-    const epoch = version;
-    const membership = action === 'adminAddTeamMembers';
-    const creating = !membership && payload.expectedName === null;
-    const errorBox = $(membership ? 'team-member-error' : 'team-name-error');
-    let confirmed = false, focusId = membership ? 'team-assign' : 'team-name-save';
-    errorBox.textContent = $('teams-error').textContent = '';
-    setBusy(true);
-    status.textContent = 'Saving…';
-    try {
-      await request(action,payload);
-      if (version !== epoch) return;
-      confirmed = true;
-      teamId = nextId;
-      await load(epoch);
-      if (version !== epoch) return;
-      status.textContent = message;
-      focusId = membership ? 'teams-add' : 'managed-team';
-      if (creating && current()?.supervisorId === nextId) {
-        openMembers();
-        focusId = 'team-members-search';
-      }
-    } catch (error) {
-      if (version !== epoch) return;
-      status.textContent = '';
-      if (error.code === 'FORBIDDEN' || confirmed) {
-        reset();
-        $('teams-error').textContent = error.code === 'FORBIDDEN' || error.code === 'TEAM_SETUP' ? error.message : message+' Refresh Teams to load the updated roster.';
-        $('teams-refresh').focus();
-      } else {
-        errorBox.textContent = error.message || 'Could not confirm this change. Refresh Teams to check the roster.';
+      if (error.code === 'FORBIDDEN') reset();
+      directory = null;
+      renderList();
+      const message = error.message || 'Could not load teams. Try again.';
+      $('teams-error').textContent = message;
+      $('teams-retry').hidden = false;
+      if (dialog.open) {
+        $('team-load-status').textContent = '';
+        errorBox.textContent = message;
+        $('team-reload').hidden = false;
       }
     } finally {
       if (version === epoch) {
-        setBusy(false);
-        $(focusId).focus();
+        loading = false;
+        status.textContent = '';
+        updateControls();
       }
     }
   }
 
-  function editName(rename) {
-    if (!directory || busy) return;
-    closeForms();
-    const team = current();
-    const choices = rename ? [{id:teamId,username:username(teamId)}] : freeSupervisors();
-    if (!choices.length) return;
-    editingName = rename ? team.name : null;
-    const fields = nameForm.elements;
-    fields.supervisorId.replaceChildren(...choices.map(person => new Option(person.username,person.id)));
-    if (!rename && choices.length > 1) fields.supervisorId.add(new Option('Choose a supervisor','',false,true),0);
-    fields.teamName.value = editingName ?? '';
-    $('team-supervisor-label').hidden = rename;
-    $('team-name-title').textContent = rename ? 'Rename team' : 'Create team';
-    $('team-name-save').textContent = rename ? 'Save name' : 'Create team';
-    nameForm.hidden = false;
+  function openEditor(team = null) {
+    if (dialog.open || saving || !actorId()) return;
+    original = team;
     status.textContent = '';
-    $('teams-error').textContent = '';
-    fields.teamName.focus();
+    $('team-dialog-title').textContent = team ? 'Edit team' : 'Create team';
+    $('team-save').textContent = team ? 'Save changes' : 'Create team';
+    if (directory && !loading) populateEditor();
+    else $('team-load-status').textContent = 'Loading team details…';
+    updateControls();
+    dialog.showModal();
+    if (directory && !loading) teamName.focus();
+    else refresh();
   }
 
-  nameForm.addEventListener('submit',event => {
+  async function save(event) {
     event.preventDefault();
-    const name = nameForm.elements.teamName.value.trim(), supervisorId = nameForm.elements.supervisorId.value;
+    if (saving || loading || !directory || !actorId() || $('team-save').disabled) return;
+    const name = teamName.value.trim();
+    let invalidField;
     if (!name || Array.from(name).length > 60 || /[\u0000-\u001f\u007f-\u009f]/u.test(name)) {
-      $('team-name-error').textContent = 'Enter a team name of 1–60 characters without control characters.';
-      nameForm.elements.teamName.setAttribute('aria-invalid','true');
-      nameForm.elements.teamName.focus();
+      errorBox.textContent = 'Enter a team name of 1–60 characters without control characters.';
+      invalidField = teamName;
+    } else if (!supervisorId.value) {
+      errorBox.textContent = 'Choose a supervisor for this team.';
+      invalidField = supervisorId;
+    }
+    if (invalidField) {
+      invalidField.setAttribute('aria-invalid','true');
+      invalidField.focus();
       return;
     }
-    const rename = editingName !== null;
-    save('adminSaveTeam',{supervisorId,name,expectedName:editingName},name+(rename ? ' renamed.' : ' created.'),supervisorId);
-  });
-  nameForm.addEventListener('input',() => {
-    $('team-name-error').textContent = '';
-    nameForm.elements.teamName.removeAttribute('aria-invalid');
-  });
 
-  function selectionSummary() {
-    const count = checked.size;
-    const transfers = candidates().filter(person => checked.has(person.id) && person.supervisorId).length;
-    $('team-move-note').textContent = transfers ? transfers+' selected '+(transfers === 1 ? 'member will move' : 'members will move')+' from another team.' : '';
-    $('team-assign').textContent = count ? 'Assign '+count+' '+(count === 1 ? 'member' : 'members') : 'Assign to team';
-    $('team-assign').disabled = !count;
+    const targetId = supervisorId.value, version = epoch;
+    const message = name + (original ? ' updated.' : ' created.');
+    const members = directory.accounts.filter(person => selected.has(person.id))
+      .map(person => ({id:person.id,expectedSupervisorId:person.supervisorId ?? null}));
+    saving = true;
+    updateControls();
+    errorBox.textContent = '';
+    $('team-reload').hidden = true;
+    $('team-save').textContent = 'Saving…';
+    let confirmed = false;
+    try {
+      await request('adminSaveTeamDetails', {
+        originalSupervisorId:original?.supervisorId ?? null, supervisorId:targetId, name,
+        expectedName:original?.name ?? null, expectedMemberIds, members
+      });
+      if (epoch !== version) return;
+      confirmed = true;
+      const result = await readDirectory();
+      if (epoch !== version) return;
+      directory = result;
+      renderList();
+      closeEditor(targetId);
+      status.textContent = message;
+    } catch (error) {
+      if (epoch !== version) return;
+      if (error.code === 'FORBIDDEN' || confirmed) {
+        reset();
+        $('teams-error').textContent = confirmed ? message + ' Reload Teams to see the updated list.' : error.message;
+        $('teams-retry').hidden = false;
+        $('teams-retry').focus();
+      } else {
+        errorBox.textContent = error.message || 'Could not confirm the change. Reload teams to check the roster.';
+        $('team-reload').hidden = false;
+      }
+    } finally {
+      if (epoch === version) {
+        saving = false;
+        updateControls();
+        if (dialog.open) {
+          $('team-save').textContent = original ? 'Save changes' : 'Create team';
+          $('team-save').focus();
+        }
+      }
+    }
   }
 
-  function renderCandidates() {
-    const available = candidates(), query = search.value.toLowerCase().trim();
-    const visible = available.filter(person => person.username.toLowerCase().includes(query));
-    const names = new Map(directory.teams.map(team => [team.supervisorId,team.name]));
-    const labels = visible.slice(0,visibleLimit).map(person => {
-      const label = make('label'), input = make('input');
-      input.type = 'checkbox'; input.value = person.id; input.checked = checked.has(person.id);
-      const detail = person.supervisorId ? (names.get(person.supervisorId) || username(person.supervisorId)+'’s team') : 'Unassigned';
-      const info = make('span');
-      info.append(make('strong',person.username),make('small',detail));
-      label.append(input,info);
-      return label;
-    });
-    $('available-members').replaceChildren(...(labels.length ? labels : [make('p',query ? 'No matching agents.' : 'No available agents.')]));
-    $('team-members-more').hidden = visible.length <= visibleLimit;
-    selectionSummary();
-  }
-
-  $('teams-refresh').addEventListener('click',refresh);
-  $('teams-create').addEventListener('click',() => editName(false));
-  $('teams-rename').addEventListener('click',() => editName(true));
-  $('teams-go-accounts').addEventListener('click',() => $('admin-open-accounts').click());
-  $('team-member-accounts').addEventListener('click',() => $('admin-open-accounts').click());
-  $('team-name-cancel').addEventListener('click',() => {
-    const button = editingName === null ? $('teams-create') : $('teams-rename');
-    closeForms(); button.focus();
+  $('teams-create').addEventListener('click',() => openEditor());
+  list.addEventListener('click',event => {
+    const edit = event.target.closest('button[data-team]');
+    if (edit) openEditor(directory.teams.find(team => team.supervisorId === edit.dataset.team));
   });
-  picker.addEventListener('change',() => {teamId=picker.value;status.textContent='';render();});
-  function openMembers() {
-    memberForm.hidden = false;
-    $('teams-add').setAttribute('aria-expanded','true');
-    $('members-form-title').textContent = 'Add agents to '+current().name;
-    renderCandidates();
-  }
-  $('teams-add').addEventListener('click',() => {
-    const open = memberForm.hidden;
-    closeForms();
-    if (!open) return;
-    status.textContent = ''; $('teams-error').textContent = '';
-    openMembers();
-    search.focus();
+  for (const id of ['team-close','team-cancel']) $(id).addEventListener('click',() => closeEditor(original?.supervisorId ?? null));
+  dialog.addEventListener('cancel',event => {
+    event.preventDefault();
+    if (!saving) closeEditor(original?.supervisorId ?? null);
   });
-  $('team-members-cancel').addEventListener('click',() => {closeForms();$('teams-add').focus();});
-  search.addEventListener('input',() => {visibleLimit=batchSize;renderCandidates();});
+  $('teams-retry').addEventListener('click',refresh);
+  $('team-reload').addEventListener('click',() => { closeEditor(null); refresh(); });
+  $('team-manage-accounts').addEventListener('click',openAccounts);
+  search.addEventListener('input',() => { visibleLimit = pageSize; renderAgents(); });
+  search.addEventListener('keydown',event => {
+    if (event.key === 'Enter') event.preventDefault();
+  });
   $('team-members-more').addEventListener('click',() => {
     const previous = visibleLimit;
-    visibleLimit += batchSize;
-    renderCandidates();
+    visibleLimit += pageSize;
+    renderAgents();
     $('available-members').querySelectorAll('input')[previous]?.focus();
   });
   $('available-members').addEventListener('change',event => {
-    $('team-member-error').textContent = '';
-    if (event.target.checked) checked.add(event.target.value);
-    else checked.delete(event.target.value);
+    if (event.target.checked) selected.add(event.target.value);
+    else selected.delete(event.target.value);
     selectionSummary();
   });
-  memberForm.addEventListener('submit',event => {
-    event.preventDefault();
-    const members = candidates().filter(person => checked.has(person.id)).map(person => ({id:person.id,expectedSupervisorId:person.supervisorId}));
-    if (!members.length) return;
-    save('adminAddTeamMembers',{supervisorId:teamId,members},members.length+(members.length===1 ? ' member' : ' members')+' assigned to '+current().name+'.',teamId);
+  form.addEventListener('input',event => {
+    if (event.target.hasAttribute('aria-invalid')) {
+      event.target.removeAttribute('aria-invalid');
+      errorBox.textContent = '';
+    }
   });
+  form.addEventListener('submit',save);
   return {refresh,reset};
 }

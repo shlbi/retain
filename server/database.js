@@ -6,6 +6,13 @@ export class ApiError extends Error {
 /** Map only explicit domain error categories; hide Postgres diagnostics from clients. */
 export function databaseError(error, rpcName) {
   const category = typeof error?.message === 'string' ? error.message.split(':',1)[0] : '';
+  if (rpcName === 'workspace_admin_save_team_details') {
+    if (error?.code === 'PGRST202') return new ApiError(503,'SETUP','Team editing needs the latest Teams database update. Apply it in Supabase, then reopen Teams.');
+    if (category === 'TEAM_NAME_TAKEN') return new ApiError(409,'TEAM_NAME_TAKEN','That team name is already in use. Choose a different name.');
+    if (category === 'SUPERVISOR_TAKEN') return new ApiError(409,'SUPERVISOR_TAKEN','That supervisor already leads a team. Choose an available supervisor.');
+    if (category === 'CONFLICT' || error?.code === '23505') return new ApiError(409,'CONFLICT','Another change affected this team or its agents. Refresh Teams and review the current assignments before saving again.');
+    if (category === 'INVALID_TEAM') return new ApiError(400,'INVALID_TEAM','Check the team name, supervisor, and agent selections before saving.');
+  }
   if (error?.code === 'PGRST202' && ['workspace_admin_save_team','workspace_admin_add_team_members'].includes(rpcName)) {
     return new ApiError(503,'SETUP','Team management needs the named teams database update. Apply it in Supabase, then refresh Teams.');
   }

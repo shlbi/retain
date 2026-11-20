@@ -165,7 +165,7 @@
   .game-panel-scroll { padding:12px 14px 20px; }
 }
 @media(max-width:400px) {
-  #workspace-view .topbar-right .storage-status { max-width:90px; }
+  #workspace-view .topbar-right .storage-status { max-width:90px; white-space:normal; overflow-wrap:anywhere; }
   .game-block-grid { grid-template-columns:1fr; }
   .game-block { grid-template-columns:1fr auto; align-items:end; }
   .game-block > span { grid-column:1/-1; }
