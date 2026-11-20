@@ -69,3 +69,31 @@
   .account-directory-row .button {grid-column:2;grid-row:1/4}
 }
 @media(max-width:760px) {.account-form :is(input:not([type=radio]),select),.request-row select,.directory-search input {font-size:16px}}
+
+.teams-card {max-width:860px}
+.account-team {min-width:0;overflow-wrap:anywhere}
+.teams-card h3 {margin:0;color:#233d59;font-size:17px;line-height:1.4;overflow-wrap:anywhere}
+.teams-actions {display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.teams-card .account-form {margin:16px 0;background:#f2f6fb;border:1px solid #d9e4f0;border-radius:8px;padding:16px}
+.teams-card .account-form > fieldset {gap:12px}
+.teams-card .account-form > fieldset > legend {font-size:16px}
+.team-detail {margin-top:20px}
+.team-detail > label {max-width:360px;font-size:13px}
+.team-detail select {height:40px;font:inherit;font-size:14px;color:#233d59;background:#fff;border:1px solid #cbd8e9;border-radius:7px;padding:6px 10px;min-width:0;width:100%}
+.team-roster-header {display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:20px 0;border-bottom:1px solid #dce6f0;margin-bottom:18px}
+.team-roster-header h3 {font-size:21px}
+.team-roster-header .account-hint {margin:5px 0 0}
+.team-members {padding:0;margin:12px 0 0;list-style:none}
+.team-members li {display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-top:1px solid #e3eaf2;padding:12px 0;font-size:14px}
+.team-members span,.available-members small {color:#526b86;font-weight:400}
+.available-members {display:grid;gap:3px;max-height:17rem;overflow:auto;overscroll-behavior:contain}
+.available-members label {display:flex;align-items:center;gap:10px;padding:7px 9px;cursor:pointer}
+.available-members label:has(input:checked) {background:#e3eefc;border-radius:6px}
+.available-members label span {display:grid;gap:2px}
+.available-members input[type=checkbox] {width:18px;height:18px;min-height:0;flex:none;accent-color:#2563a6}
+.available-members p {margin:6px 0;font-size:14px}
+#team-move-note:empty {display:none}
+#team-move-note {margin:0}
+.workspace-team-name,.game-team-name {margin:0;color:#23598d;font-weight:650;font-size:14px;overflow-wrap:anywhere}
+.workspace-team-name {padding:8px 12px}
+@media(max-width:760px) {.team-detail select {font-size:16px}}

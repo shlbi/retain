@@ -37,7 +37,7 @@ function formError(form, message = '') {
 }
 
 function teamOptions(select, supervisors, selected) {
-  select.replaceChildren(new Option('Unassigned',''),...supervisors.map(person => new Option(person.username,person.id)));
+  select.replaceChildren(new Option('Unassigned',''),...supervisors.map(person => new Option(person.teamName ? person.teamName+' · '+person.username : person.username,person.id)));
   select.value = selected || '';
   if (select.selectedIndex === -1) select.value = '';
 }
@@ -113,7 +113,8 @@ export function createAccountManagement(request, actorId) {
       const row = element('div',undefined,'account-directory-row');
       const tag = element('span',roles[person.role],'account-role');
       const supervisor = supervisors.find(s => s.id === person.supervisorId);
-      const team = person.role === 'supervisor' ? 'Leads a team' : supervisor ? supervisor.username+'’s team' : 'Unassigned';
+      const team = person.role === 'supervisor' ? (supervisors.find(s => s.id === person.id)?.teamName || 'No named team')
+        : supervisor ? (supervisor.teamName || supervisor.username+'’s team') : 'Unassigned';
       const button = actionButton('Edit','button secondary',() => openEditor('edit',person),person.username);
       button.disabled = busy;
       row.append(identity(person.username,person.id === actorId() ? 'Your account' : null),tag,element('span',team,'account-team'),button);
@@ -132,7 +133,8 @@ export function createAccountManagement(request, actorId) {
     const data = await request('adminAccounts');
     if (version !== generation) return;
     roster = data;
-    supervisors = data.accounts.filter(account => account.role === 'supervisor');
+    const teamNames = new Map((data.teams || []).map(team => [team.supervisorId,team.name]));
+    supervisors = data.accounts.filter(account => account.role === 'supervisor').map(account => ({...account,teamName:teamNames.get(account.id)}));
     teamOptions(createForm.elements.supervisorId,supervisors,createForm.elements.supervisorId.value);
     teamVisibility(createForm);
     renderRequests(); renderDirectory();

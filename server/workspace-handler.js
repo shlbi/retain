@@ -1,13 +1,14 @@
 import { DEFAULT_GOALS } from '../dist/model.js';
 import { StorageError } from '../dist/validation.js';
 import { validateDayTotals, validateTallyState, validateTallyUpdate } from '../dist/tally-validation.js';
-import { credentials, hashPassword, verifyPassword, tokenHash, newSession, sessionToken, sessionCookie, SESSION_SECONDS } from './auth.js';
+import { credentials, hashPassword, needsPasswordUpgrade, verifyPassword, tokenHash, newSession, sessionToken, sessionCookie, SESSION_SECONDS } from './auth.js';
 import { gameConnection } from './game-connection.js';
 import { ApiError, createDatabase } from './database.js';
 
 const ACTION_FIELDS = {signup:['username','password','requestedRole'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value'],editDay:['expected','replacement'],
   adminCreateAccount:['username','password','role','supervisorId'],adminReviewSignup:['requestId','decision','role','supervisorId'],
   adminAssignAccount:['accountId','role','supervisorId','expectedRole','expectedSupervisorId'],
+  adminSaveTeam:['supervisorId','name','expectedName'],adminAddTeamMembers:['supervisorId','members'],
   agentState:['agentId'],teamGoals:['agentIds','goals'],gameSchedule:['title','incentive','startsAt','endsAt','pattern','squares']};
 const READ_ACTIONS = {
   state:'workspace_tally_state', teamContext:'workspace_team_context',
@@ -62,7 +63,7 @@ export async function readJson(req) {
   }
   if (!input || typeof input !== 'object' || Array.isArray(input) || ![Object.prototype,null].includes(Object.getPrototypeOf(input))) throw VALIDATION('Send one JSON object.');
   if (Buffer.byteLength(JSON.stringify(input),'utf8') > MAX_REQUEST_BYTES) throw VALIDATION('The request exceeds the 4 MiB limit.');
-  if (!Object.hasOwn(ACTION_FIELDS,input.action)) throw VALIDATION('Choose a supported action.');
+  if (typeof input.action !== 'string' || !Object.hasOwn(ACTION_FIELDS,input.action)) throw VALIDATION('Choose a supported action.');
   const fields = ['action',...ACTION_FIELDS[input.action]];
   if (Object.keys(input).some(key=>!fields.includes(key))) throw VALIDATION('This request contains unsupported fields.');
   return input;
@@ -91,15 +92,65 @@ function validatedCredentials(body, action) {
   try { return credentials(body.username,body.password,action); }
   catch (error) { throw VALIDATION(error.message); }
 }
+
+async function authenticatedAccount(db, account) {
+  const lookup = () => db.rpc('auth_get_user',{p_username_key:account.username});
+  const authenticate = async stored => {
+    const matches = await verifyPassword(account.password,stored?.password_hash);
+    if (!matches || !publicUser(stored)) throw new ApiError(401,'AUTH','Username or password is incorrect.');
+    if (!['pending','active'].includes(stored.status)) throw new ApiError(503,'STORAGE','Your account could not be opened. Try signing in again.');
+    return stored;
+  };
+  const stored = await authenticate(await lookup());
+  if (!needsPasswordUpgrade(stored.password_hash)) return stored;
+
+  // Rehashing is opportunistic. The existing verified credential continues to work
+  // if the migration has not finished rolling out or the server is at KDF capacity.
+  let upgraded;
+  try {
+    upgraded = await db.rpc('auth_upgrade_password_hash',{
+      p_identity_id:stored.id,p_status:stored.status,p_expected_hash:stored.password_hash,
+      p_new_hash:await hashPassword(account.password)
+    });
+  } catch (error) {
+    if (!(error instanceof ApiError) || !['STORAGE','AUTH_BUSY'].includes(error.code)) throw error;
+    return stored;
+  }
+  // A concurrent login, approval or denial may have changed this identity.
+  if (upgraded === false) return authenticate(await lookup());
+  return stored;
+}
 function validateAssignment(role, supervisorId, roles = accountRoles) {
   if (!roles.includes(role)) throw VALIDATION('Choose a valid account role.');
   if (supervisorId !== null && (!isUuid(supervisorId) || role === 'supervisor')) throw VALIDATION('Choose a valid supervisor for this account.');
+}
+function teamName(value) {
+  if (typeof value !== 'string' || /\p{Cc}/u.test(value)) throw VALIDATION('Use a team name without control characters.');
+  const trimmed = value.trim();
+  if (!trimmed || [...trimmed].length > 60) throw VALIDATION('Team names must contain 1–60 characters.');
+  return trimmed;
+}
+/** Bind each transfer to the membership the admin saw when selecting the roster. */
+function validateMemberChanges(members, supervisorId) {
+  if (!Array.isArray(members) || !members.length) throw VALIDATION('Choose at least one agent to assign.');
+  const seen = new Set();
+  for (const member of members) {
+    if (!member || typeof member !== 'object' || Array.isArray(member) ||
+        Object.keys(member).some(key => !['id','expectedSupervisorId'].includes(key)) ||
+        !isUuid(member.id) || (member.expectedSupervisorId !== null && !isUuid(member.expectedSupervisorId))) {
+      throw VALIDATION('Each selected agent must include their current supervisor assignment.');
+    }
+    const id = member.id.toLowerCase();
+    if (id === supervisorId.toLowerCase() || seen.has(id)) throw VALIDATION('Choose each agent once and exclude the team supervisor.');
+    seen.add(id);
+  }
 }
 /** A management session may see tracker identities and assignments, never credential records. */
 function accountDirectory(value) {
   return {
     pending:value.pending.map(({id,username,requestedRole,requestedAt}) => ({id,username,requestedRole,requestedAt})),
-    accounts:value.accounts.map(({id,username,role,supervisorId}) => ({id,username,role,supervisorId}))
+    accounts:value.accounts.map(({id,username,role,supervisorId}) => ({id,username,role,supervisorId})),
+    teams:(value.teams ?? []).map(({supervisorId,name}) => ({supervisorId,name}))
   };
 }
 /** A schema mismatch must never expose unvalidated columns or legacy identifiers. */
@@ -145,12 +196,9 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
           if (submitted?.status !== 'pending') throw new ApiError(503,'STORAGE','Could not confirm the sign-up request. Try again.');
           return send(202,{status:'pending'});
         }
-        const stored = await db.rpc('auth_get_user',{p_username_key:account.username});
-        const matches = await verifyPassword(account.password,stored?.password_hash);
+        const stored = await authenticatedAccount(db,account);
         const user = publicUser(stored);
-        if (!matches || !user) throw new ApiError(401,'AUTH','Username or password is incorrect.');
         if (stored.status === 'pending') throw new ApiError(403,'PENDING_APPROVAL','Your request is waiting for admin approval.');
-        if (stored.status !== 'active') throw new ApiError(503,'STORAGE','Your account could not be opened. Try signing in again.');
         const session = newSession(), now = clock();
         await db.rpc('auth_create_session',{p_user_id:user.id,p_token_hash:session.hash,p_expires_at:new Date(now + SESSION_SECONDS * 1000).toISOString()});
         const previous = sessionToken(header(req,'cookie'));
@@ -182,6 +230,22 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
       }
       let result;
       switch (body.action) {
+        case 'adminSaveTeam': {
+          const {supervisorId,name,expectedName} = body;
+          if (!isUuid(supervisorId)) throw VALIDATION('Choose the team supervisor.');
+          if (expectedName !== null) teamName(expectedName);
+          result = await db.rpc('workspace_admin_save_team',{
+            p_user_id:user.id,p_supervisor_id:supervisorId,p_name:teamName(name),p_expected_name:expectedName
+          });
+          break;
+        }
+        case 'adminAddTeamMembers': {
+          const {supervisorId,members} = body;
+          if (!isUuid(supervisorId)) throw VALIDATION('Choose a team to receive the agents.');
+          validateMemberChanges(members,supervisorId);
+          result = await db.rpc('workspace_admin_add_team_members',{p_user_id:user.id,p_supervisor_id:supervisorId,p_members:members});
+          break;
+        }
         case 'adminCreateAccount': {
           const {role,supervisorId} = body;
           validateAssignment(role,supervisorId);
@@ -255,14 +319,15 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
         }
         default: throw VALIDATION('Choose a supported action.');
       }
-      if (['adminCreateAccount','adminReviewSignup','adminAssignAccount'].includes(body.action)) {
-        if (result?.ok !== true) throw new ApiError(503,'STORAGE','Could not confirm the account change. Refresh Accounts to check its status.');
+      if (['adminCreateAccount','adminReviewSignup','adminAssignAccount','adminSaveTeam','adminAddTeamMembers'].includes(body.action)) {
+        if (result?.ok !== true) throw new ApiError(503,'STORAGE','Could not confirm this change. Refresh the directory to check its status.');
         return send(200,{ok:true});
       }
       return send(200,result);
     } catch(error) {
       const problem = error instanceof ApiError ? error : error instanceof StorageError ? new ApiError(error.code === 'CONFLICT' || error.code === 'DUPLICATE' ? 409 : 400,error.code,error.message) : new ApiError(503,'STORAGE','The server could not confirm this operation. Try the same operation again.');
       if (problem.status === 429) res.setHeader('Retry-After','900');
+      if (problem.code === 'AUTH_BUSY') res.setHeader('Retry-After','2');
       return send(problem.status,{error:{code:problem.code,message:problem.message}});
     }
   };

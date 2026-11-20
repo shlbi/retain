@@ -10,6 +10,7 @@ import { displayAdminStats } from './performance.js';
 import { validateTallyState } from './tally-validation.js';
 import { signupRules } from './signup-rules.js';
 import { createAccountManagement } from './accounts.js';
+import { createNamedTeams } from './named-teams.js';
 
 const paths = {
   overview:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -46,11 +47,13 @@ const games = createGames({apiRequest,onOpen:() => { if (view !== 'today') setVi
 let teamContext = {role:'agent',agents:[]}, selectedAgentId = '', adminRequest = 0;
 let adminSection = 'performance';
 const adminActor = () => teamContext.role === 'admin' ? sessionUser?.id : null;
-const accountManagement = createAccountManagement((action,data) => {
+const adminRequestFor = (action,data) => {
   const actor = adminActor();
   if (!actor) throw new Error('An admin account is required.');
   return apiRequest(action,data,actor);
-}, adminActor);
+};
+const accountManagement = createAccountManagement(adminRequestFor,adminActor);
+const namedTeams = createNamedTeams(adminRequestFor,adminActor);
 const teamGoals = createTeamGoals(async (agentIds,goals) => {
   if (teamContext.role !== 'supervisor' || !sessionUser) throw new Error('Only supervisors can assign goals.');
   const actor = sessionUser.id;
@@ -159,7 +162,7 @@ function clearAdminReport() {
 }
 function setAdminSection(section, load = true) {
   adminSection = section;
-  for (const name of ['accounts','performance']) {
+  for (const name of ['accounts','performance','teams']) {
     $('admin-'+name).hidden = section !== name;
     const button = $('admin-open-'+name);
     if (name === section) button.setAttribute('aria-current','page');
@@ -167,6 +170,7 @@ function setAdminSection(section, load = true) {
   }
   if (load && view === 'admin' && adminActor()) {
     if (section === 'accounts') accountManagement.refresh();
+    else if (section === 'teams') namedTeams.refresh();
     else loadAdminStats();
   }
 }
@@ -175,11 +179,14 @@ function applyRole(context) {
   if (oldRole === 'admin' && context.role !== 'admin') {
     clearAdminReport();
     accountManagement.reset();
+    namedTeams.reset();
     setAdminSection('performance',false);
   }
   if (oldRole === 'supervisor' && context.role !== 'supervisor') teamGoals.reset();
   teamContext = context;
-  if (sessionUser) games.openSession(sessionUser,context.role);
+  if (sessionUser) games.openSession(sessionUser,context.role,context.teamName,context.supervisorId);
+  $('workspace-team-name').textContent = context.teamName || '';
+  $('workspace-team-name').hidden = !context.teamName;
   if (!selectedAgent()) selectedAgentId = context.agents[0]?.id || '';
   const supervisor = watchingTeam(), admin = context.role === 'admin';
   $('workspace-view').classList.toggle('supervising',supervisor);
@@ -217,7 +224,7 @@ function setView(next,scroll=true) {
       watchingTeam() ? (name ? 'Daily outcomes and progress toward assigned goals.' : 'No agents are assigned to your team yet.') : 'Every conversation counts. See how yours add up.'],
     calls: ['Call log',watchingTeam() ? (name ? name+'’s call log' : 'Team call log') : 'Your call log.', 'Daily counts by outcome and service.'],
     goals: ['Goals','Team goals','Set a performance target for everyone or choose individual agents.'],
-    admin: ['Admin','Admin',adminSection === 'accounts' ? 'Review sign-up requests and manage account access.' : 'See how agents use the tracker and how the app responds.']
+    admin: ['Admin','Admin',adminSection === 'accounts' ? 'Review sign-up requests and manage account access.' : adminSection === 'teams' ? 'Choose supervisors and manage their teams.' : 'See how agents use the tracker and how the app responds.']
   };
   const [label,title,description] = titles[view];
   $('breadcrumb-label').textContent=label;
@@ -546,7 +553,7 @@ $('team-agent').addEventListener('change',async () => {
   await syncFromStorage();
 });
 $('refresh-admin').addEventListener('click',loadAdminStats);
-for (const section of ['accounts','performance']) {
+for (const section of ['accounts','performance','teams']) {
   $('admin-open-'+section).addEventListener('click',() => {
     if (section === adminSection) return;
     setAdminSection(section);

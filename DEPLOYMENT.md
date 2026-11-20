@@ -61,15 +61,17 @@ History editing requires migration `20261113230000_edit_grouped_history.sql`. If
 
 The API uses expiring sessions, salted password hashes, rate limits and atomic per-user database operations. Admin reporting is available to trusted admin accounts. Manage database backups and trusted operator access in Supabase. Keep server keys out of the frontend and source control.
 
+Apply the password-hash upgrade migration before deploying its server release. New and admin-created accounts immediately use the stronger scrypt profile described in the README. A legacy upgrade compares the previously verified digest and identity to avoid overwriting a concurrent change. Existing sessions continue on their normal expiry schedule. Any rollback must retain verification for both the p=1 and p=3 formats. Each function instance runs at most two password derivations at once and queues up to eight more. Requests beyond capacity receive a retryable response.
+
 
 ## Team setup and permissions
 
-Apply the team, bingo, account-management and performance-report migrations in filename order. Upgrading preserves existing active accounts, sessions, roles, team assignments and history. New public sign-ups go to a private requests table. Active workspaces and sessions are created only for approved or admin-created accounts.
+Apply the checked-in migrations in filename order, including the named-team and password-hash upgrades before enabling their app release. Upgrading preserves existing active accounts, sessions, roles, team assignments and history. New public sign-ups go to a private requests table. Active workspaces and sessions are created only for approved or admin-created accounts.
 
-Use **Admin → Accounts** for normal operations:
+Use **Admin → Accounts** and **Admin → Teams** for normal operations.
 
 1. Open a pending request and approve it as an agent or supervisor, or deny it. Denial removes the pending password hash and releases the username. Approvals let the person sign in with the credentials they already chose.
-2. To set up a team, assign the supervisor role to an existing account or create a supervisor account. Assign the team’s agents to that supervisor using the directory. Admins can also join a supervisor's team as players.
+2. Give the intended leader the Supervisor role. Open **Admin → Teams**, create a named team for that supervisor, then use **Add agents** to assign the roster. An agent or admin can also be assigned individually from the Accounts directory. Existing supervisors with rosters or games receive editable default names during the named-team migration.
 3. To change a supervisor's role, move their members first. Each admin keeps their own admin role when editing their own assignment. Role and roster checks run in the database on each privileged operation.
 
 ### First admin on a fresh installation
