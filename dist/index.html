@@ -169,6 +169,7 @@
         </section>
         <section id="admin-teams" aria-label="Team management" hidden>
           <p id="teams-status" class="accounts-status" role="status"></p>
+          <p id="teams-error" class="team-error" role="alert"></p>
           <div class="panel account-card teams-card">
             <div class="account-card-heading"><h2>Teams <span id="teams-count" class="account-count" hidden></span></h2>
               <div class="teams-actions"><button type="button" class="text-button" id="teams-refresh">Refresh</button><button type="button" class="button primary" id="teams-create" disabled>Create team</button></div>
@@ -177,6 +178,7 @@
               <fieldset><legend id="team-name-title">Create team</legend>
                 <label>Team name<input name="teamName" autocomplete="off" required></label>
                 <label id="team-supervisor-label">Supervisor<select name="supervisorId" required></select></label>
+                <p id="team-name-error" class="team-error" role="alert"></p>
                 <div class="teams-actions"><button type="submit" id="team-name-save" class="button primary">Create team</button><button type="button" id="team-name-cancel" class="button secondary">Cancel</button></div>
               </fieldset>
             </form>
@@ -189,7 +191,7 @@
                 <button id="teams-rename" type="button" class="text-button">Rename team</button>
               </div>
               <div class="account-card-heading"><h3>Members <span id="members-count" class="account-count"></span></h3>
-                <button id="teams-add" type="button" class="button secondary" aria-controls="team-member-form" aria-expanded="false">Add agents</button>
+                <button id="teams-add" type="button" class="button primary" aria-controls="team-member-form" aria-expanded="false">Add agents</button>
               </div>
               <form id="team-member-form" class="account-form team-member-form" hidden>
                 <fieldset><legend id="members-form-title">Add agents</legend>
@@ -197,6 +199,8 @@
                   <div class="available-members" id="available-members"></div>
                   <button type="button" id="team-members-more" class="text-button" hidden>Show more agents</button>
                   <p class="account-hint" id="team-move-note"></p>
+                  <button type="button" id="team-member-accounts" class="text-button">Create or approve agent accounts</button>
+                  <p id="team-member-error" class="team-error" role="alert"></p>
                   <div class="teams-actions"><button type="submit" class="button primary" id="team-assign" disabled>Assign to team</button><button type="button" class="button secondary" id="team-members-cancel">Cancel</button></div>
                 </fieldset>
               </form>

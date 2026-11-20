@@ -71,6 +71,10 @@
 @media(max-width:760px) {.account-form :is(input:not([type=radio]),select),.request-row select,.directory-search input {font-size:16px}}
 
 .teams-card {max-width:860px}
+.team-error {margin:0;padding:10px 12px;border-inline-start:3px solid #bf2538;border-radius:4px;background:#fff0f1;color:#95162a;font-size:14px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}
+.team-error:empty {position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%)}
+#teams-error:not(:empty) {margin-bottom:14px}
+#team-member-accounts {justify-self:start}
 .account-team {min-width:0;overflow-wrap:anywhere}
 .teams-card h3 {margin:0;color:#233d59;font-size:17px;line-height:1.4;overflow-wrap:anywhere}
 .teams-actions {display:flex;gap:12px;align-items:center;flex-wrap:wrap}

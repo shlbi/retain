@@ -210,6 +210,22 @@ test('database adapter hides raw errors, maps conflicts, and supports the legacy
   }
 });
 
+test('an older directory still serves Accounts and reports that Teams needs its migration',async()=>{
+  const db=fakeDatabase(), rpc=db.rpc.bind(db);
+  db.rpc=(name,args)=>name==='workspace_admin_accounts' ? {accounts:[],pending:[]} : rpc(name,args);
+  const handler=createHandler({env:ENV,database:db});
+  const response=await request(handler,{method:'GET',url:'/api/workspace?action=adminAccounts',cookie:session()});
+  assert.equal(response.status,200);
+  assert.deepEqual(response.body,{accounts:[],pending:[],teams:null});
+
+  const missing=createDatabase({SUPABASE_URL:'https://database.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_example'},
+    async()=>({ok:false,json:async()=>({code:'PGRST202',message:'private schema cache details'})}));
+  for(const name of ['workspace_admin_save_team','workspace_admin_add_team_members']) {
+    await assert.rejects(missing.rpc(name),error=>error.code==='SETUP' && error.message.includes('named teams') && !error.message.includes('private'));
+  }
+  await assert.rejects(missing.rpc('workspace_tally_state'),error=>error.code==='STORAGE');
+});
+
 test('history edits use session ownership and reject different report dates',async()=>{
   const db=fakeDatabase();
   const handler=createHandler({env:ENV,database:db});

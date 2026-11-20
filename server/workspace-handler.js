@@ -150,7 +150,9 @@ function accountDirectory(value) {
   return {
     pending:value.pending.map(({id,username,requestedRole,requestedAt}) => ({id,username,requestedRole,requestedAt})),
     accounts:value.accounts.map(({id,username,role,supervisorId}) => ({id,username,role,supervisorId})),
-    teams:(value.teams ?? []).map(({supervisorId,name}) => ({supervisorId,name}))
+    // Accounts remain usable on the previous schema. Teams needs to distinguish
+    // an unavailable directory from a successfully loaded, empty roster.
+    teams:Array.isArray(value.teams) ? value.teams.map(({supervisorId,name}) => ({supervisorId,name})) : null
   };
 }
 /** A schema mismatch must never expose unvalidated columns or legacy identifiers. */

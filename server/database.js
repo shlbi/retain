@@ -4,8 +4,14 @@ export class ApiError extends Error {
 }
 
 /** Map only explicit domain error categories; hide Postgres diagnostics from clients. */
-export function databaseError(error) {
+export function databaseError(error, rpcName) {
   const category = typeof error?.message === 'string' ? error.message.split(':',1)[0] : '';
+  if (error?.code === 'PGRST202' && ['workspace_admin_save_team','workspace_admin_add_team_members'].includes(rpcName)) {
+    return new ApiError(503,'SETUP','Team management needs the named teams database update. Apply it in Supabase, then refresh Teams.');
+  }
+  if (category === 'CONFLICT' && rpcName === 'workspace_admin_save_team') {
+    return new ApiError(409,'CONFLICT','This team name or supervisor is already in use, or the team was edited. Refresh Teams to see its current details.');
+  }
   if (category === 'DUPLICATE' || error?.code === '23505') return new ApiError(409,'DUPLICATE','That username already exists.');
   if (category === 'CONFLICT') return new ApiError(409,'CONFLICT','These records changed or conflict with existing records. Reload the latest records before trying again. No conflicting changes were applied.');
   if (category === 'FORBIDDEN') return new ApiError(403,'FORBIDDEN','Your role or team assignment does not allow this action.');
@@ -38,7 +44,7 @@ export function createDatabase(env = process.env, fetchImpl = globalThis.fetch) 
         response = await fetchImpl(new URL(`/rest/v1/rpc/${name}`,base), {method:'POST',headers,body:JSON.stringify(args),signal:AbortSignal.timeout(timeoutMs),cache:'no-store'});
         data = await response.json();
       } catch { throw new ApiError(503,'STORAGE','Cloud storage could not confirm this operation. Try the same operation again.'); }
-      if (!response.ok) throw databaseError(data);
+      if (!response.ok) throw databaseError(data,name);
       return data;
     }
   };

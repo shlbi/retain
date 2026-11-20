@@ -32,6 +32,8 @@ export function createNamedTeams(request, actorId) {
     nameForm.hidden = memberForm.hidden = true;
     nameForm.reset(); search.value = ''; checked.clear(); visibleLimit = batchSize;
     $('available-members').replaceChildren();
+    $('team-name-error').textContent = $('team-member-error').textContent = '';
+    nameForm.elements.teamName.removeAttribute('aria-invalid');
     $('teams-add').setAttribute('aria-expanded','false');
   }
 
@@ -44,7 +46,7 @@ export function createNamedTeams(request, actorId) {
     $('teams-count').textContent = teams.length;
     const canCreate = freeSupervisors().length > 0;
     $('teams-empty').hidden = !!team && canCreate;
-    $('teams-empty').textContent = canCreate ? 'Create a team and choose its supervisor.'
+    $('teams-empty').textContent = canCreate ? 'Choose a name and supervisor to create a team. Then select the agents to assign.'
       : 'To create another team, assign the Supervisor role to an available account.';
     if (!team && !canCreate) $('teams-empty').textContent = 'Assign the Supervisor role to an account, then create your first team.';
     $('teams-go-accounts').hidden = canCreate;
@@ -66,7 +68,7 @@ export function createNamedTeams(request, actorId) {
 
   function reset() {
     version++; directory = null; teamId = '';
-    closeForms(); status.textContent = '';
+    closeForms(); status.textContent = ''; $('teams-error').textContent = '';
     for (const id of ['managed-team','managed-team-title','managed-team-supervisor','managed-roster','members-count','teams-count']) $(id).replaceChildren();
     nameForm.elements.supervisorId.replaceChildren();
     for (const id of ['teams-count','teams-empty','teams-go-accounts','team-detail']) $(id).hidden = true;
@@ -76,7 +78,11 @@ export function createNamedTeams(request, actorId) {
   async function load(epoch) {
     const result = await request('adminAccounts');
     if (version !== epoch) return;
-    if (!Array.isArray(result?.teams)) throw new Error('Team management is not available yet. Refresh to try again.');
+    if (!Array.isArray(result?.teams)) {
+      const error = new Error('Team management needs the named teams database update. Apply the update in Supabase, then refresh Teams.');
+      error.code = 'TEAM_SETUP';
+      throw error;
+    }
     directory = result;
     render();
   }
@@ -85,44 +91,56 @@ export function createNamedTeams(request, actorId) {
     if (busy || !actorId()) return;
     const epoch = version;
     status.textContent = 'Loading teams…';
+    $('teams-error').textContent = '';
     setBusy(true);
     try {
       await load(epoch);
       if (version === epoch) status.textContent = '';
     } catch (error) {
       if (version !== epoch) return;
-      if (error.code === 'FORBIDDEN') reset();
-      status.textContent = error.message || 'Could not load teams. Refresh to try again.';
+      if (error.code === 'FORBIDDEN' || error.code === 'TEAM_SETUP') reset();
+      status.textContent = '';
+      $('teams-error').textContent = error.message || 'Could not load teams. Refresh to try again.';
     } finally { if (version === epoch) setBusy(false); }
   }
 
-  async function save(action, payload, message, nextId, focusId) {
+  async function save(action, payload, message, nextId) {
     if (busy || !directory || !actorId()) return;
     const epoch = version;
+    const membership = action === 'adminAddTeamMembers';
+    const creating = !membership && payload.expectedName === null;
+    const errorBox = $(membership ? 'team-member-error' : 'team-name-error');
+    let confirmed = false, focusId = membership ? 'team-assign' : 'team-name-save';
+    errorBox.textContent = $('teams-error').textContent = '';
     setBusy(true);
     status.textContent = 'Saving…';
     try {
       await request(action,payload);
       if (version !== epoch) return;
+      confirmed = true;
       teamId = nextId;
-      closeForms();
-      try {
-        await load(epoch);
-        if (version !== epoch) return;
-        status.textContent = message;
-      } catch (error) {
-        if (version !== epoch) return;
-        if (error.code === 'FORBIDDEN') reset();
-        status.textContent = message + ' Refresh to see the updated roster.';
+      await load(epoch);
+      if (version !== epoch) return;
+      status.textContent = message;
+      focusId = membership ? 'teams-add' : 'managed-team';
+      if (creating && current()?.supervisorId === nextId) {
+        openMembers();
+        focusId = 'team-members-search';
       }
     } catch (error) {
       if (version !== epoch) return;
-      if (error.code === 'FORBIDDEN') reset();
-      status.textContent = error.message || 'Could not save this change. Refresh to check the roster.';
+      status.textContent = '';
+      if (error.code === 'FORBIDDEN' || confirmed) {
+        reset();
+        $('teams-error').textContent = error.code === 'FORBIDDEN' || error.code === 'TEAM_SETUP' ? error.message : message+' Refresh Teams to load the updated roster.';
+        $('teams-refresh').focus();
+      } else {
+        errorBox.textContent = error.message || 'Could not confirm this change. Refresh Teams to check the roster.';
+      }
     } finally {
       if (version === epoch) {
         setBusy(false);
-        if (nameForm.hidden && memberForm.hidden) $(focusId).focus({preventScroll:true});
+        $(focusId).focus();
       }
     }
   }
@@ -143,6 +161,7 @@ export function createNamedTeams(request, actorId) {
     $('team-name-save').textContent = rename ? 'Save name' : 'Create team';
     nameForm.hidden = false;
     status.textContent = '';
+    $('teams-error').textContent = '';
     fields.teamName.focus();
   }
 
@@ -150,12 +169,17 @@ export function createNamedTeams(request, actorId) {
     event.preventDefault();
     const name = nameForm.elements.teamName.value.trim(), supervisorId = nameForm.elements.supervisorId.value;
     if (!name || Array.from(name).length > 60 || /[\u0000-\u001f\u007f-\u009f]/u.test(name)) {
-      status.textContent = 'Enter a team name of 1–60 characters without control characters.';
+      $('team-name-error').textContent = 'Enter a team name of 1–60 characters without control characters.';
+      nameForm.elements.teamName.setAttribute('aria-invalid','true');
       nameForm.elements.teamName.focus();
       return;
     }
     const rename = editingName !== null;
-    save('adminSaveTeam',{supervisorId,name,expectedName:editingName},name+(rename ? ' renamed.' : ' created.'),supervisorId,'managed-team');
+    save('adminSaveTeam',{supervisorId,name,expectedName:editingName},name+(rename ? ' renamed.' : ' created.'),supervisorId);
+  });
+  nameForm.addEventListener('input',() => {
+    $('team-name-error').textContent = '';
+    nameForm.elements.teamName.removeAttribute('aria-invalid');
   });
 
   function selectionSummary() {
@@ -188,20 +212,24 @@ export function createNamedTeams(request, actorId) {
   $('teams-create').addEventListener('click',() => editName(false));
   $('teams-rename').addEventListener('click',() => editName(true));
   $('teams-go-accounts').addEventListener('click',() => $('admin-open-accounts').click());
+  $('team-member-accounts').addEventListener('click',() => $('admin-open-accounts').click());
   $('team-name-cancel').addEventListener('click',() => {
     const button = editingName === null ? $('teams-create') : $('teams-rename');
     closeForms(); button.focus();
   });
   picker.addEventListener('change',() => {teamId=picker.value;status.textContent='';render();});
+  function openMembers() {
+    memberForm.hidden = false;
+    $('teams-add').setAttribute('aria-expanded','true');
+    $('members-form-title').textContent = 'Add agents to '+current().name;
+    renderCandidates();
+  }
   $('teams-add').addEventListener('click',() => {
     const open = memberForm.hidden;
     closeForms();
     if (!open) return;
-    memberForm.hidden = false;
-    $('teams-add').setAttribute('aria-expanded','true');
-    $('members-form-title').textContent = 'Add agents to '+current().name;
-    status.textContent = '';
-    renderCandidates();
+    status.textContent = ''; $('teams-error').textContent = '';
+    openMembers();
     search.focus();
   });
   $('team-members-cancel').addEventListener('click',() => {closeForms();$('teams-add').focus();});
@@ -213,6 +241,7 @@ export function createNamedTeams(request, actorId) {
     $('available-members').querySelectorAll('input')[previous]?.focus();
   });
   $('available-members').addEventListener('change',event => {
+    $('team-member-error').textContent = '';
     if (event.target.checked) checked.add(event.target.value);
     else checked.delete(event.target.value);
     selectionSummary();
@@ -221,7 +250,7 @@ export function createNamedTeams(request, actorId) {
     event.preventDefault();
     const members = candidates().filter(person => checked.has(person.id)).map(person => ({id:person.id,expectedSupervisorId:person.supervisorId}));
     if (!members.length) return;
-    save('adminAddTeamMembers',{supervisorId:teamId,members},members.length+(members.length===1 ? ' member' : ' members')+' assigned to '+current().name+'.',teamId,'teams-add');
+    save('adminAddTeamMembers',{supervisorId:teamId,members},members.length+(members.length===1 ? ' member' : ' members')+' assigned to '+current().name+'.',teamId);
   });
   return {refresh,reset};
 }
