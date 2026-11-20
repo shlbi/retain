@@ -137,10 +137,10 @@ function table(headers, data) {
 
 export function displayAdminStats(stats) {
   $('admin-summary').replaceChildren(
-    card('Active agents',format.format(stats.activeAgents),format.format(stats.registered)+' registered accounts'),
+    card('Active agents',format.format(stats.activeAgents),format.format(stats.registered)+(stats.registered === 1 ? ' registered account' : ' registered accounts')),
     card('Calls logged',format.format(stats.calls),'Past 28 days'),
     card('Overall save rate',percent(stats.savedCalls,stats.eligibleCalls),format.format(stats.savedCalls)+' saved / '+format.format(stats.eligibleCalls)+' eligible'),
-    card('Mobiles sold',format.format(stats.mobileLines),format.format(stats.mobileOrders)+' orders')
+    card('Mobiles sold',format.format(stats.mobileLines),format.format(stats.mobileOrders)+(stats.mobileOrders === 1 ? ' order' : ' orders'))
   );
   $('admin-trend').replaceChildren(periodTrend(stats.days));
   $('admin-team-table').replaceChildren(stats.teams.length ? table(['Supervisor','Active / members','Calls','Save rate','Orders','Lines'],
