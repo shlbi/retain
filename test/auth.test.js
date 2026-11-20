@@ -24,7 +24,7 @@ test('signup validates trimmed usernames and counts Unicode characters in both f
 test('salted scrypt hashes differ and verify only the exact original password',async()=>{
   const first = await hashPassword('x'), second = await hashPassword('x');
   assert.notEqual(first,second);
-  assert.match(first,/^scrypt\$32768\$8\$1\$[a-f0-9]{32}\$[a-f0-9]{128}$/);
+  assert.match(first,/^scrypt\$32768\$8\$3\$[a-f0-9]{32}\$[a-f0-9]{128}$/);
   assert.equal(await verifyPassword('x',first),true);
   assert.equal(await verifyPassword('X',first),false);
   assert.equal(await verifyPassword('x ',first),false);

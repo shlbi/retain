@@ -24,6 +24,7 @@
   grid-template-columns:minmax(0,1fr) minmax(0,1fr);
   grid-template-rows:minmax(0,1fr);
   height:100dvh;
+  overflow-x:clip;
 }
 .games-split .app-shell {
   grid-area:1 / 1;

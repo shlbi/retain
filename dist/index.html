@@ -63,6 +63,7 @@
   <a class="skip-link" href="#main">Skip to content</a>
   <aside class="sidebar">
     <div class="workspace-label">YOUR WORKSPACE</div>
+    <p id="workspace-team-name" class="workspace-team-name" hidden></p>
     <label id="team-picker" class="team-picker" hidden>Team member
       <select id="team-agent" aria-label="Choose an agent"><option value="">No agents assigned</option></select>
     </label>
@@ -159,11 +160,49 @@
         <nav class="admin-sections" aria-label="Admin sections">
           <button id="admin-open-performance" type="button" aria-controls="admin-performance" aria-current="page">Performance</button>
           <button id="admin-open-accounts" type="button" aria-controls="admin-accounts">Accounts</button>
+          <button id="admin-open-teams" type="button" aria-controls="admin-teams">Teams</button>
         </nav>
         <section id="admin-performance" aria-label="Performance">
         <p id="admin-status" class="team-secondary" role="status"></p>
         <button id="refresh-admin" class="text-button">Refresh report</button>
         <div id="admin-report" hidden></div>
+        </section>
+        <section id="admin-teams" aria-label="Team management" hidden>
+          <p id="teams-status" class="accounts-status" role="status"></p>
+          <div class="panel account-card teams-card">
+            <div class="account-card-heading"><h2>Teams <span id="teams-count" class="account-count" hidden></span></h2>
+              <div class="teams-actions"><button type="button" class="text-button" id="teams-refresh">Refresh</button><button type="button" class="button primary" id="teams-create" disabled>Create team</button></div>
+            </div>
+            <form id="team-name-form" class="account-form team-name-form" hidden>
+              <fieldset><legend id="team-name-title">Create team</legend>
+                <label>Team name<input name="teamName" autocomplete="off" required></label>
+                <label id="team-supervisor-label">Supervisor<select name="supervisorId" required></select></label>
+                <div class="teams-actions"><button type="submit" id="team-name-save" class="button primary">Create team</button><button type="button" id="team-name-cancel" class="button secondary">Cancel</button></div>
+              </fieldset>
+            </form>
+            <p id="teams-empty" class="accounts-empty" hidden></p>
+            <button type="button" class="text-button" id="teams-go-accounts" hidden>Manage accounts</button>
+            <div id="team-detail" class="team-detail" hidden>
+              <label class="directory-search">Team<select id="managed-team"></select></label>
+              <div class="team-roster-header">
+                <div><h3 id="managed-team-title"></h3><p id="managed-team-supervisor" class="account-hint"></p></div>
+                <button id="teams-rename" type="button" class="text-button">Rename team</button>
+              </div>
+              <div class="account-card-heading"><h3>Members <span id="members-count" class="account-count"></span></h3>
+                <button id="teams-add" type="button" class="button secondary" aria-controls="team-member-form" aria-expanded="false">Add agents</button>
+              </div>
+              <form id="team-member-form" class="account-form team-member-form" hidden>
+                <fieldset><legend id="members-form-title">Add agents</legend>
+                  <label>Find an agent<input id="team-members-search" type="search" autocomplete="off" placeholder="Search username"></label>
+                  <div class="available-members" id="available-members"></div>
+                  <button type="button" id="team-members-more" class="text-button" hidden>Show more agents</button>
+                  <p class="account-hint" id="team-move-note"></p>
+                  <div class="teams-actions"><button type="submit" class="button primary" id="team-assign" disabled>Assign to team</button><button type="button" class="button secondary" id="team-members-cancel">Cancel</button></div>
+                </fieldset>
+              </form>
+              <ul class="team-members" id="managed-roster"></ul><p id="team-no-members" class="accounts-empty" hidden>No agents assigned yet.</p>
+            </div>
+          </div>
         </section>
         <section id="admin-accounts" aria-label="Accounts" hidden>
           <p id="accounts-status" class="accounts-status" role="status"></p>

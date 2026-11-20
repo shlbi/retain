@@ -11,6 +11,7 @@ export function databaseError(error) {
   if (category === 'FORBIDDEN') return new ApiError(403,'FORBIDDEN','Your role or team assignment does not allow this action.');
   if (category === 'SELF_ROLE') return new ApiError(403,'SELF_ROLE','You can change your team. Another admin must change your role.');
   if (category === 'TEAM_IN_USE') return new ApiError(409,'TEAM_IN_USE','Reassign this supervisor’s team members before changing their role.');
+  if (category === 'TEAM_REQUIRED') return new ApiError(403,'TEAM_REQUIRED','Ask an admin to create your team before scheduling a game.');
   if (category === 'INVALID_TEAM') return new ApiError(400,'INVALID_TEAM','Choose a current supervisor or leave the account unassigned.');
   if (category === 'LIMIT') return new ApiError(400,'VALIDATION','This workspace has reached its storage capacity.');
   if (category === 'VALIDATION') return new ApiError(400,'VALIDATION','The supplied record or target is invalid, or the workspace storage limit would be exceeded. No changes were applied.');

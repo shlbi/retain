@@ -187,7 +187,7 @@ test('raw and platform-parsed requests enforce the size limit',async()=>{
   const body={action:'login',username:'a',password:'x'};
   const req=Readable.from([Buffer.from(JSON.stringify(body))]);req.headers={'content-type':'application/json'};
   assert.deepEqual(await readJson(req),body);
-  for(const value of ['{',[],{action:'login',username:'a',password:'x'.repeat(MAX_REQUEST_BYTES)}]){
+  for(const value of ['{',[],{action:['login']},{action:{toString:'login'}},{action:'login',username:'a',password:'x'.repeat(MAX_REQUEST_BYTES)}]){
     await assert.rejects(readJson({headers:{},body:value}),error=>error.status===400);
   }
   await assert.rejects(readJson({headers:{'content-length':String(MAX_REQUEST_BYTES+1)},body}),/4 MiB/);
@@ -204,7 +204,7 @@ test('Supabase opaque keys use apikey only; legacy service-role JWTs also use Au
 });
 
 test('database adapter hides raw errors, maps conflicts, and supports the legacy environment key',async()=>{
-  for(const [message,code,status] of [['CONFLICT: private row details','P0001',409],['DUPLICATE: a secret username','P0001',409],['LIMIT: capacity','P0001',400],['leaked database text','XX000',503]]){
+  for(const [message,code,status] of [['CONFLICT: private row details','P0001',409],['DUPLICATE: a secret username','P0001',409],['TEAM_REQUIRED: missing team row','P0001',403],['LIMIT: capacity','P0001',400],['leaked database text','XX000',503]]){
     const db=createDatabase({SUPABASE_URL:'https://database.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'legacy.jwt.key'},async()=>({ok:false,json:async()=>({message,code})}));
     await assert.rejects(db.rpc('workspace_tally_state'),error=>error.status===status&&!error.message.includes(message));
   }
@@ -271,10 +271,11 @@ test('admin management verifies actor and projection, binds writes and never ret
   const managed={id:USER_B.id,username:'Member',role:'agent',supervisorId:null};
   const requestedAt='2026-11-19T14:00:00Z';
   const pending={id:requestId,username:'Leader',requestedRole:'supervisor',requestedAt};
+  const team={supervisorId:USER_A.id,name:'North'};
   const calls=[];
   db.rpc=(name,args)=>{
     calls.push({name,args});
-    if(name==='workspace_admin_accounts')return {accounts:[{...managed,password_hash:'secret'}],pending:[{...pending,password_hash:'secret'}]};
+    if(name==='workspace_admin_accounts')return {accounts:[{...managed,password_hash:'secret'}],pending:[{...pending,password_hash:'secret'}],teams:[{...team,private_field:'secret'}]};
     if(name==='workspace_team_context')return {role:'admin'};
     if(name.startsWith('workspace_admin_'))return {ok:true,password_hash:'secret'};
     return rpc(name,args);
@@ -282,7 +283,7 @@ test('admin management verifies actor and projection, binds writes and never ret
   const handler=createHandler({env:ENV,database:db});
   const directory={method:'GET',url:'/api/workspace?action=adminAccounts'};
   assert.equal((await request(handler,directory)).status,401);
-  assert.deepEqual((await request(handler,{...directory,cookie})).body,{accounts:[managed],pending:[pending]});
+  assert.deepEqual((await request(handler,{...directory,cookie})).body,{accounts:[managed],pending:[pending],teams:[team]});
   const assign={action:'adminAssignAccount',accountId:managed.id,role:'supervisor',supervisorId:null,expectedRole:'agent',expectedSupervisorId:null};
   assert.equal((await request(handler,{cookie,body:{...assign,expectedRole:undefined}})).status,400);
   assert.equal((await request(handler,{cookie,body:{...assign,supervisorId:USER_A.id}})).status,400);
@@ -311,4 +312,57 @@ test('account creation enforces signup rules and rejects non-admins before hashi
   assert.equal((await request(handler,{cookie,body:{...create,username:'Pete'}})).status,400);
   assert.equal((await request(handler,{cookie,body:create})).status,403);
   assert.ok(!db.calls.some(c=>c.name==='workspace_admin_create_account'));
+});
+
+test('named team and roster updates bind the verified admin and the prior assignments',async()=>{
+  const db = fakeDatabase(), rpc = db.rpc.bind(db), cookie = session();
+  const writes = [];
+  db.rpc = (name,args) => {
+    if (['workspace_admin_save_team','workspace_admin_add_team_members'].includes(name)) {
+      writes.push({name,args}); return {ok:true};
+    }
+    return rpc(name,args);
+  };
+  const handler = createHandler({env:ENV,database:db});
+  const save = {action:'adminSaveTeam',supervisorId:USER_B.id,name:' North ',expectedName:null};
+  assert.equal((await request(handler,{body:save})).status,401);
+  assert.equal((await request(handler,{cookie,expected:USER_B.id,body:save})).status,401);
+  assert.equal((await request(handler,{cookie,body:save})).status,200);
+  assert.deepEqual(writes[0].args,{p_user_id:USER_A.id,p_supervisor_id:USER_B.id,p_name:'North',p_expected_name:null});
+  assert.equal((await request(handler,{cookie,body:{...save,name:"O'Brien's Team",expectedName:'North'}})).status,200);
+  assert.deepEqual(writes[1].args,{p_user_id:USER_A.id,p_supervisor_id:USER_B.id,p_name:"O'Brien's Team",p_expected_name:'North'});
+  const members = [{id:USER_A.id,expectedSupervisorId:null},{id:requestId,expectedSupervisorId:USER_A.id}];
+  const transfer = {action:'adminAddTeamMembers',supervisorId:USER_B.id,members};
+  assert.deepEqual((await request(handler,{cookie,body:transfer})).body,{ok:true});
+  assert.deepEqual(writes[2],{name:'workspace_admin_add_team_members',args:{p_user_id:USER_A.id,p_supervisor_id:USER_B.id,p_members:members}});
+  for (const body of [
+    {...save,name:'   '},{...save,name:'A'.repeat(61)},{...save,name:'Night\nCrew'},{...save,expectedName:undefined},
+    {...save,supervisorId:null},{...save,userId:USER_B.id},
+    {...transfer,supervisorId:null},{...transfer,members:[]},{...transfer,members:[{id:USER_A.id}]},
+    {...transfer,members:[{id:USER_B.id,expectedSupervisorId:null}]},
+    {...transfer,members:[members[1],{...members[1],id:members[1].id.toUpperCase()}]},
+    {...transfer,members:[{...members[1],role:'admin'}]},
+    {...transfer,members:[{id:USER_A.id,expectedSupervisorId:'old team'}]}
+  ]) assert.equal((await request(handler,{cookie,body})).status,400);
+  assert.equal(writes.length,3);
+  const forbidden = new ApiError(403,'FORBIDDEN','Administrator access required.');
+  const denied = createHandler({env:ENV,database:fakeDatabase({fail:{
+    workspace_admin_save_team:forbidden,workspace_admin_add_team_members:forbidden
+  }})});
+  for (const body of [save,transfer]) assert.equal((await request(denied,{cookie,body})).status,403);
+});
+
+test('game scheduling has no team override and game reads use the current session actor',async()=>{
+  const db = fakeDatabase(), cookie = session(), handler = createHandler({env:ENV,database:db});
+  const schedule = {action:'gameSchedule',title:'Bingo',incentive:'',startsAt:'2026-11-19T12:00:00Z',
+    endsAt:'2026-11-19T19:00:00Z',pattern:'line',squares:Array(9).fill({metric:'calls',target:1})};
+  for (const field of ['teamId','supervisorId','p_user_id']) {
+    assert.equal((await request(handler,{cookie,body:{...schedule,[field]:USER_B.id}})).status,400);
+  }
+  await request(handler,{cookie,body:schedule});
+  const launch = db.calls.find(c => c.name === 'workspace_launch_game');
+  assert.equal(launch.args.p_user_id,USER_A.id);
+  assert.equal(launch.args.p_game.title,'Bingo');
+  await request(handler,{cookie,method:'GET',url:'/api/workspace?action=gameState&supervisorId='+USER_B.id});
+  assert.deepEqual(db.calls.find(c => c.name === 'workspace_game_state').args,{p_user_id:USER_A.id});
 });

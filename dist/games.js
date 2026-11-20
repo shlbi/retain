@@ -51,10 +51,11 @@ function standings(data, supervisor) {
   }).join('') + '</div>';
 }
 
-function gameView(data, supervisor) {
+function gameView(data, supervisor, canSchedule) {
   const {game,me} = data;
   if (!game) return '<section class="games-empty">' + icon('bingo') + '<h3>No game scheduled</h3><p>' +
-    (supervisor ? 'Set up a bingo game for your team.' : 'Your team’s next game will appear here.') + '</p></section>';
+    (supervisor ? canSchedule ? 'Set up a bingo game for your team.' : 'Ask an admin to create your team before scheduling a game.'
+      : 'Your team’s next game will appear here.') + '</p></section>';
   return '<article class="games-current"><div class="games-phase ' + escape(game.status) + '">' + escape(phaseNames[game.status]) +
     '</div><h3>' + escape(game.title) + '</h3><p class="games-time">' + dateText(game.startsAt) + ' – ' + dateText(game.endsAt) + '</p>' +
     '<dl class="games-facts"><div><dt>Incentive</dt><dd>' + escape(game.incentive || 'No incentive set') + '</dd></div><div><dt>To win</dt><dd>' +
@@ -113,7 +114,7 @@ export function createGames({apiRequest,onOpen}) {
   header.querySelector('.topbar-right').insertAdjacentHTML('afterbegin','<button type="button" class="game-open" aria-expanded="false" aria-controls="team-game-panel">' + icon('bingo') + ' Games</button>');
   header.insertAdjacentHTML('afterend','<div class="games-dock" hidden><button type="button" class="game-widget" aria-expanded="false" aria-controls="team-game-panel"></button></div>');
   workspace.insertAdjacentHTML('beforeend','<aside id="team-game-panel" class="game-panel" hidden aria-labelledby="team-game-title">' +
-    '<header><h2 id="team-game-title">Games</h2><button type="button" class="game-close" aria-label="Close games">' + icon('close') +
+    '<header><div><h2 id="team-game-title">Games</h2><p class="game-team-name" hidden></p></div><button type="button" class="game-close" aria-label="Close games">' + icon('close') +
     '</button></header><div class="game-panel-scroll" role="region" aria-label="Game details" tabindex="0"><div class="game-controls"></div><p class="game-scheduled" role="status" hidden></p><p class="game-error game-load-error" role="status" hidden></p>' +
     '<div class="game-view"></div><div class="game-setup"></div></div></aside>');
   const $ = selector => workspace.querySelector(selector);
@@ -122,7 +123,7 @@ export function createGames({apiRequest,onOpen}) {
   const gameButton = $('.game-open'), shell = $('.app-shell');
   let opener = gameButton;
   let user = null, role = null, session = 0, timer, pending = null, data = null, menuOpen, viewKey, loadError = '';
-  let needsRefresh = false, scheduling = false;
+  let needsRefresh = false, scheduling = false, teamName, supervisorId;
   const updates = createGameUpdates(refresh);
 
   function toggleMenu(open) {
@@ -167,7 +168,7 @@ export function createGames({apiRequest,onOpen}) {
         (loadError ? '<span>Offline</span>' : '');
     }
     if (panel.hidden) return;
-    if (role === 'supervisor' && !controls.children.length) {
+    if (role === 'supervisor' && teamName !== null && !controls.children.length) {
       controls.innerHTML = '<button type="button" class="button secondary" data-game-new>Schedule a game</button>';
     }
     if (!setup.children.length) {
@@ -175,7 +176,7 @@ export function createGames({apiRequest,onOpen}) {
       if (currentKey !== viewKey) {
         const openPlayers = new Set([...view.querySelectorAll('details[open]')].map(el => el.dataset.player));
         const activePlayer = document.activeElement?.closest('details')?.dataset.player;
-        view.innerHTML = data ? gameView(data,role==='supervisor') : '<p class="games-muted">Loading game…</p>';
+        view.innerHTML = data ? gameView(data,role==='supervisor',teamName!==null) : '<p class="games-muted">Loading game…</p>';
         for (const details of view.querySelectorAll('details[data-player]')) {
           details.open = openPlayers.has(details.dataset.player);
           if (activePlayer === details.dataset.player) details.querySelector('summary').focus({preventScroll:true});
@@ -293,14 +294,25 @@ export function createGames({apiRequest,onOpen}) {
   function closeSession() {
     session++; user=null; role=null; data=null; pending=null; needsRefresh=false; scheduling=false; loadError='';
     clearTimeout(timer); updates.close();
+    teamName = supervisorId = undefined;
+    $('.game-team-name').textContent = ''; $('.game-team-name').hidden = true;
     setPanel(false,false);
     setup.replaceChildren(); controls.replaceChildren(); view.replaceChildren(); widget.replaceChildren();
     controls.hidden=false; view.hidden=false; viewKey=undefined; dock.hidden=true; $('.game-scheduled').hidden=true;
     toggleMenu(!narrow.matches);
   }
-  function openSession(nextUser,nextRole) {
-    if (!nextUser?.id || (user?.id===nextUser.id && role===nextRole)) return;
-    closeSession(); user=nextUser; role=nextRole; refresh();
+  function openSession(nextUser,nextRole,nextTeamName,nextSupervisorId) {
+    if (!nextUser?.id) return;
+    const sameTeam = user?.id === nextUser.id && role === nextRole && supervisorId === nextSupervisorId;
+    if (sameTeam && teamName === nextTeamName) return;
+    if (!sameTeam) {
+      closeSession(); user=nextUser; role=nextRole; supervisorId=nextSupervisorId;
+    }
+    teamName = nextTeamName;
+    $('.game-team-name').textContent = teamName || '';
+    $('.game-team-name').hidden = !teamName;
+    if (sameTeam) { controls.replaceChildren(); viewKey = undefined; }
+    draw(); refresh();
   }
   return {openSession,closeSession,refresh};
 }

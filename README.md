@@ -48,7 +48,9 @@ Each submission includes a random retry token so retrying the same submission ca
 
 Use credentials created specifically for this tracker. Each can contain 1–8 characters. Usernames cannot start with a digit, `p` or `P`. Existing accounts can continue to sign in with their original credentials. To request access, choose **Agent** or **Supervisor** on the sign-up screen. After an admin approves the request, sign in with the same username and password.
 
-The app uses its own username/password accounts and an HttpOnly session cookie. Passwords are salted and hashed with scrypt. The server connects to the private database through same-origin Vercel functions. Database credentials stay on the server.
+The app uses its own username/password accounts and an HttpOnly session cookie. Each password has a random 128-bit salt and a one-way scrypt hash. New hashes use `N=32768, r=8, p=3`. A successful credential check upgrades an older hash, including on a pending account. Pending applicants still need approval to sign in. Database credentials stay in the same-origin Vercel functions. The eight-character password limit is a product constraint and restricts resistance to guessing.
+
+The [database schema guide](docs/SCHEMA.md) explains how accounts, memberships, game scores, daily totals and API permissions fit together. Run the [read-only inventory query](scripts/schema-inventory.sql) in the Supabase SQL Editor to inspect the deployed structure without reading account or call data.
 
 ## Team workspaces
 
@@ -56,9 +58,13 @@ The app uses its own username/password accounts and an HttpOnly session cookie. 
 | --- | --- |
 | Agent | Log calls, correct personal history, view assigned goals and play the assigned team's game. |
 | Supervisor | Select a team member in the sidebar to view that person's percentages and call log. In **Goals**, choose a metric and apply its target to the whole current roster or selected agents. In **Games**, schedule team bingo and see player progress. |
-| Admin | Use the personal agent workspace and play on an assigned team. Open **Admin** to see performance charts, review sign-ups, create accounts, assign roles and manage team membership. |
+| Admin | Use the personal agent workspace and play on an assigned team. Open **Admin** to see performance charts, review sign-ups, create accounts, assign roles and manage named teams. |
 
-In **Admin → Accounts**, review pending requests or create an account for someone who needs immediate access. The directory lets an admin change an existing user's role and supervisor. Assign the supervisor role first, then select that supervisor for each team member. Each agent or admin can belong to one team. Move a supervisor's team members before changing that supervisor's role. Admins can change their own team and retain their admin access.
+In **Admin → Accounts**, approve requests, create accounts or change a user's role. To organize a new team, first give its leader the Supervisor role. Open **Admin → Teams**, choose **Create team**, enter its name and select that supervisor. Use **Add agents** to assign one or several agents. The picker shows each person's current team so you can see who is moving. The supervisor can view that team's agents and launch its games. In **Accounts**, an admin can also change an individual assignment or leave someone unassigned.
+
+Each team has one supervisor. A supervisor leads one team and an agent or admin can belong to one team. Updating a team's name preserves its roster and games. Existing supervisors with a roster or games receive a default name that an admin can edit. Move a supervisor's members before changing that supervisor's role.
+
+If you demote a supervisor after moving their members, a team with games keeps its name and history until you promote that same person again. An empty team without games releases its name.
 
 ### Team bingo
 
