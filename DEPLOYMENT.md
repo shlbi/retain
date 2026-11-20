@@ -50,7 +50,7 @@ Use a test workspace and synthetic selections for these checks.
 1. Sign up and record a call that starts with Internet and Video and keeps Internet. Confirm the row shows **DP → SP**, **Internet kept**, **Video disconnected** and **1 account**.
 2. Save the same combination as a second call. Refresh, then sign in on another device. Confirm a single matching row shows **2 accounts** and the call counter shows **2**.
 3. Log two accounts on one call with identical starting services. Keep every original service on one account and disconnect every original service on the other. Confirm that the resulting rows carry the **Wash** tag and that call count increases by one.
-4. Log one mobile order with three lines. Confirm the daily mobile row gains one order and three lines. Adding Mobile as an account service also gives that service one save.
+4. Log one mobile order with three lines. Confirm the daily mobile row gains one order and three lines. The first order on an account that started without Mobile also earns one mobile service save.
 5. Export the grouped report. Check that rows contain the expected dates, service tags and account or sales counts. Sign in to a different fresh workspace and verify its totals start empty.
 
 Production history resides in Supabase. A browser refresh before submitting discards the current form. After a confirmed save, refreshing reloads the grouped totals. When storage cannot confirm a submission, check the current totals or use the retry action on the pending form before starting a new entry.

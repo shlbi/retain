@@ -4,7 +4,7 @@ A responsive tracker for call outcomes, mobile sales and daily goals. Sign in wi
 
 ## Logging and scoring a call
 
-Select the original services, mark the services kept, and select any additions. Use **Add another account** for each additional account handled during the call. Enter mobile orders once for the entire call. Entry uses fixed choices. UCIDs, customer account numbers, callback reminders and free-text notes have been retired.
+Select the original services, mark the services kept, and select any additions. Use **Add another account** for each additional account handled during the call. Enter mobile orders on the account that placed them. Entry uses fixed choices. UCIDs, customer account numbers, callback reminders and free-text notes have been retired.
 
 | Account outcome | History tag | Rates affected |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ A **wash** pairs two accounts on the same call that started with exactly the sam
 
 ### Mobile orders and mobiles sold
 
-Each mobile order contains **1–12 mobiles**. A call can contain multiple orders. Across ten calls, one order for three mobiles gives a **10% order rate** and a **30% line rate**. Every call contributes once to each sales denominator, including calls with several customer accounts or a wash. Adding mobile service to an account earns one mobile service save. Record the sold lines in the mobile order controls.
+Each mobile order contains **1–12 mobiles**. A call can contain multiple orders. Across ten calls, one order for three mobiles gives a **10% order rate** and a **30% line rate**. Every call contributes once to each sales denominator, including calls with several customer accounts or a wash. Use **Mobile orders** on the selected account. If that account started without Mobile, its first order earns one mobile service save. Orders on an account that started with Mobile count toward sales, and its kept or disconnected choice determines mobile retention credit.
 
 Daily reports use Eastern time. Each ring shows progress against its editable goal.
 

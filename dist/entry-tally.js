@@ -1,13 +1,23 @@
 import { SERVICES, dayKey, outcomesForCall } from './model.js';
 
-const emptyAccount = () => ({before: [], kept: [], added: []});
-const emptyDraft = () => ({accounts: [emptyAccount()], mobileOrders: []});
+const emptyAccount = () => ({before: [], kept: [], added: [], mobileOrders: []});
+const emptyDraft = () => ({accounts: [emptyAccount()]});
 const maxOrders = 20;
 const maxLines = 12;
 const buttonLabel = {save: 'save', downgrade: 'neutral', disconnect: 'disconnect'};
 
 function toggle(list, key) {
   return list.includes(key) ? list.filter(item => item !== key) : [...list, key];
+}
+
+/** Orders belong to the selected account during entry. Only grouped outcomes and sale totals persist. */
+export function callFromEntry(draft) {
+  return {
+    accounts: draft.accounts.map(({before, kept, added, mobileOrders}) => ({
+      before, kept, added: mobileOrders.length && !before.includes('mobile') ? [...added, 'mobile'] : added
+    })),
+    mobileOrders: draft.accounts.flatMap(account => account.mobileOrders)
+  };
 }
 
 function serviceBadges(keys, label, style) {
@@ -75,17 +85,18 @@ export function createTallyEntry({submit, onClose, icon = () => ''}) {
           <button type="button" data-end="${service.key}" data-kept="false" aria-label="Disconnect ${service.label}" aria-pressed="${!kept}">Disconnected</button>
         </div></div>`;
     }).join('') || '<p class="text-muted">Select the services the customer had.</p>';
-    const available = SERVICES.filter(service => !account.before.includes(service.key));
+    const available = SERVICES.filter(service => service.key !== 'mobile' && !account.before.includes(service.key));
     field('added-services-section').hidden = !account.before.length || !available.length;
     field('added-count').textContent = account.added.length ? `(${account.added.length})` : '';
     field('added-services').innerHTML = available.map(service => `
       <button type="button" class="service-button" data-added-service="${service.key}" aria-pressed="${account.added.includes(service.key)}">${service.short}</button>`).join('');
-    const orders = draft.mobileOrders;
+    const call = callFromEntry(draft);
+    const orders = account.mobileOrders;
     const total = orders.reduce((sum, lines) => sum + lines, 0);
     field('mobile-orders').innerHTML = orders.map(orderRow).join('') + (total ?
       `<p class="orders-summary">${orders.length} order${orders.length === 1 ? '' : 's'} · ${total} line${total === 1 ? '' : 's'}</p>` : '');
-    form.querySelector('[data-action="add-order"]').toggleAttribute('data-limit', orders.length >= maxOrders);
-    field('outcome-preview').innerHTML = outcomePreview(draft);
+    form.querySelector('[data-action="add-order"]').toggleAttribute('data-limit', call.mobileOrders.length >= maxOrders);
+    field('outcome-preview').innerHTML = outcomePreview(call);
     lockControls();
   }
 
@@ -139,13 +150,13 @@ export function createTallyEntry({submit, onClose, icon = () => ''}) {
       firstService();
       return;
     } else if (action === 'add-order') {
-      draft.mobileOrders.push(1);
-      focusSelector = `[data-action="order-up"][data-order-index="${draft.mobileOrders.length - 1}"]`;
+      account.mobileOrders.push(1);
+      focusSelector = `[data-action="order-up"][data-order-index="${account.mobileOrders.length - 1}"]`;
     } else if (action === 'remove-order') {
-      draft.mobileOrders.splice(index, 1);
+      account.mobileOrders.splice(index, 1);
       focusSelector = '[data-action="add-order"]';
     } else if (action === 'order-up' || action === 'order-down') {
-      draft.mobileOrders[index] += action === 'order-up' ? 1 : -1;
+      account.mobileOrders[index] += action === 'order-up' ? 1 : -1;
       focusSelector = `[data-action="${action}"][data-order-index="${index}"]`;
     } else return;
     draw();
@@ -165,7 +176,7 @@ export function createTallyEntry({submit, onClose, icon = () => ''}) {
       firstService();
       return;
     }
-    if (!submission) submission = {draft: structuredClone(draft), token: crypto.randomUUID(), day: dayKey()};
+    if (!submission) submission = {draft: structuredClone(callFromEntry(draft)), token: crypto.randomUUID(), day: dayKey()};
     const request = submission;
     message();
     writing = true;
@@ -189,7 +200,7 @@ export function createTallyEntry({submit, onClose, icon = () => ''}) {
   return {
     reset,
     busy(value) { unavailable = Boolean(value); lockControls(); },
-    dirty: () => draft.accounts.length > 1 || draft.accounts[0].before.length > 0 || draft.mobileOrders.length > 0,
+    dirty: () => draft.accounts.length > 1 || draft.accounts[0].before.length > 0 || draft.accounts[0].mobileOrders.length > 0,
     pending: () => Boolean(submission),
     focus: firstService
   };
