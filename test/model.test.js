@@ -239,6 +239,13 @@ test('invalid target inputs fail explicitly and invalid configured goals use def
   assert.equal(metric([], 'overall', { overall:NaN }).goal, 85);
 });
 
+test('a metric without a shared team target still reports its actual counts and rate', () => {
+  const {successes,total,rate,goal,progress,needed,reached} =
+    metric([call(['tv'], ['tv']), call(['tv'], [])], 'overall', {overall:null});
+  assert.deepEqual({successes,total,rate,goal,progress,needed,reached},
+    {successes:1,total:2,rate:50,goal:null,progress:0,needed:null,reached:false});
+});
+
 test('mobile counts as a service and TP explicitly groups three or four services', () => {
   const all = ['internet', 'tv', 'phone', 'mobile'];
   assert.equal(classifyCall(['mobile'], ['mobile']).code, 'SPS');

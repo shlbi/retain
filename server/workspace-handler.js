@@ -1,6 +1,6 @@
 import { DEFAULT_GOALS } from '../dist/model.js';
 import { StorageError } from '../dist/validation.js';
-import { validateDayTotals, validateTallyState, validateTallyUpdate } from '../dist/tally-validation.js';
+import { validateDayTotals, validateTallyState, validateTallyUpdate, validateTeamReport } from '../dist/tally-validation.js';
 import { credentials, existingUsername, hashPassword, needsPasswordUpgrade, verifyPassword, tokenHash, newPasswordChangeCode, newSession, sessionToken, sessionCookie, SESSION_SECONDS } from './auth.js';
 import { gameConnection } from './game-connection.js';
 import { ApiError, createDatabase, invalidReset } from './database.js';
@@ -15,7 +15,7 @@ const ACTION_FIELDS = {signup:['username','password','requestedRole'],login:['us
   requestPasswordChange:['username'],completePasswordChange:['username','code','password'],adminReviewPasswordChange:['requestId','decision'],
   agentState:['agentId'],teamGoals:['agentIds','goals'],gameSchedule:['title','incentive','startsAt','endsAt','pattern','squares']};
 const READ_ACTIONS = {
-  state:'workspace_tally_state', teamContext:'workspace_team_context',
+  state:'workspace_tally_state', teamContext:'workspace_team_context', teamReport:'workspace_team_report',
   adminStats:'workspace_admin_stats', adminPerformance:'workspace_admin_performance',
   adminAccounts:'workspace_admin_accounts', gameState:'workspace_game_state'
 };
@@ -274,9 +274,11 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
       const user = await currentUser(db,req);
       let action;
       if (req.method === 'GET') {
-        action = new URL(req.url || '/api/workspace','http://localhost').searchParams.get('action');
+        const params = new URL(req.url || '/api/workspace','http://localhost').searchParams;
+        action = params.get('action');
         if (!action) return send(200,{user});
         if (!Object.hasOwn(READ_ACTIONS,action)) throw VALIDATION('Choose a supported action.');
+        if (action === 'teamReport' && params.size !== 1) throw VALIDATION('The team report takes no additional parameters.');
       }
       if (!user) throw new ApiError(401,'AUTH','Sign in to open your saved records.');
       if (header(req,'x-workspace-user') !== user.id) throw new ApiError(401,'AUTH','Your session changed. Sign in again.');
@@ -285,6 +287,7 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
         const data = await db.rpc(READ_ACTIONS[action],{p_user_id:user.id});
         if (action === 'gameState') return send(200,gameConnection(data,env));
         if (action === 'adminAccounts') return send(200,accountDirectory(data));
+        if (action === 'teamReport') return send(200,safeResult(data,validateTeamReport));
         return send(200,action === 'state' ? safeResult(data,validateTallyState) : data);
       }
       let result;

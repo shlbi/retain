@@ -156,6 +156,11 @@ export function validateCall(value, {allowLegacy = true} = {}) {
   return call;
 }
 
+export function validateGoalPercentage(key, value) {
+  if (!Number.isInteger(value) || value < 5 || value > 100) throw new StorageError('VALIDATION', `The ${key} goal must be a whole percentage from 5 to 100.`);
+  return value;
+}
+
 /** Existing backups can predate the bundle goal. Version 2 also predates the orders goal. */
 export function validateGoals(value, version = SCHEMA_VERSION) {
   object(value, 'Goals'); fields(value, Object.keys(DEFAULT_GOALS), 'Goals');
@@ -164,8 +169,7 @@ export function validateGoals(value, version = SCHEMA_VERSION) {
   for (const key of Object.keys(DEFAULT_GOALS)) {
     const introducedLater = key === 'bundle' || (version === 2 && key === 'orders');
     const candidate = introducedLater && value[key] === undefined ? DEFAULT_GOALS[key] : value[key];
-    if (!Number.isInteger(candidate) || candidate < 5 || candidate > 100) throw new StorageError('VALIDATION', `The ${key} goal must be a whole percentage from 5 to 100.`);
-    goals[key] = candidate;
+    goals[key] = validateGoalPercentage(key, candidate);
   }
   return goals;
 }

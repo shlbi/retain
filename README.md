@@ -70,6 +70,10 @@ The [database schema guide](docs/SCHEMA.md) explains how accounts, memberships, 
 | Supervisor | Select a name in **Agents**, the expandable list below **Goals**, to view that person's percentages and call log. The list starts open and stays open when switching agents. In **Goals**, apply a target to the whole roster or selected agents. In **Games**, schedule team bingo and see player progress. |
 | Admin | Use the personal agent workspace and play on an assigned team. Open **Admin** to see performance charts, review sign-ups, create accounts, assign roles and manage named teams. |
 
+Supervisors can click the **team name** at the top of the sidebar to switch both **Overview** and **Call log** to the whole team. Select a name under **Agents** to return to that person. If two agents save 1 of 1 and 2 of 9 eligible calls, the team saves 3 of 10 (30%). The rings show a shared goal when everyone has the same target for that metric. The team call log combines identical outcomes for the same date and supports the date filters and CSV export.
+
+Team reports cover the current roster for every report date. Transferring a member changes which team's report includes that person's history.
+
 **Admin → Teams** lists every active team with its supervisor, member count and an **Edit** button. Choose **Create team** at the top right, enter the team name, pick an available supervisor and check the agents to include. The checklist shows each person's current team. Submit the form once to save the team and its roster together.
 
 Choose **Edit** beside a team to change its name, supervisor or members. Current members start checked. Unchecking someone removes them from the team. Checking someone from another team transfers them when you save. A change of supervisor carries the team's games and scores to the new supervisor. Use **Admin → Accounts** to create or approve a missing account, or give an available account the Supervisor role.

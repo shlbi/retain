@@ -365,6 +365,53 @@ test('team and games actions bind access to the signed-in actor',async()=>{
   assert.ok(db.calls.some(c=>c.name==='workspace_record_request'));
 });
 
+test('the team report takes its supervisor from the session and has no writable or selectable target',async()=>{
+  const db=fakeDatabase(), rpc=db.rpc.bind(db), calls=[];
+  const report={version:4,memberCount:2,goals:{...DEFAULT_GOALS,overall:null},days:[
+    {day,...delta,calls:3_000_000_000,eligibleCalls:3_000_000_000,savedCalls:3_000_000_000,
+      groups:[{...delta.groups[0],count:3_000_000_000}]}
+  ]};
+  db.rpc=(name,args)=>{
+    if (name!=='workspace_team_report') return rpc(name,args);
+    calls.push(args);
+    return report;
+  };
+  const handler=createHandler({env:ENV,database:db});
+  const route={method:'GET',url:'/api/workspace?action=teamReport'};
+  const cookie=session();
+  assert.equal((await request(handler,route)).status,401);
+  assert.equal((await request(handler,{...route,cookie,expected:USER_B.id})).status,401);
+  assert.equal((await request(handler,{...route,cookie,url:route.url+'&supervisorId='+USER_B.id})).status,400);
+  assert.equal((await request(handler,{cookie,body:{action:'teamReport'}})).status,400);
+  assert.deepEqual(calls,[]);
+  const response=await request(handler,{...route,cookie});
+  assert.equal(response.status,200);
+  assert.deepEqual(response.body,report);
+  assert.deepEqual(calls,[{p_user_id:USER_A.id}]);
+});
+
+test('team reports protect names, grouped data and the distinction between shared and varying goals',async()=>{
+  const empty={version:4,memberCount:0,days:[],goals:Object.fromEntries(Object.keys(DEFAULT_GOALS).map(key=>[key,null]))};
+  let report=empty;
+  const db=fakeDatabase(), rpc=db.rpc.bind(db);
+  db.rpc=(name,args)=>name==='workspace_team_report' ? report : rpc(name,args);
+  const handler=createHandler({env:ENV,database:db});
+  const read=()=>request(handler,{method:'GET',url:'/api/workspace?action=teamReport',cookie:session()});
+  assert.deepEqual((await read()).body,empty);
+  for (const invalid of [
+    {...empty,agentName:'private-identifier'}, {...empty,goals:DEFAULT_GOALS}, {...empty,memberCount:1},
+    {...empty,memberCount:2,goals:{...DEFAULT_GOALS,orders:101}}, {...empty,memberCount:-1},
+    {...empty,memberCount:2,days:[{day,...delta,account:'private-identifier'}]},
+    {...empty,memberCount:2,days:[{day,...delta},{day,...delta}]}
+  ]) {
+    report=invalid;
+    const response=await read();
+    assert.equal(response.status,503);
+    assert.equal(response.body.error.code,'STORAGE');
+    assert.ok(!JSON.stringify(response.body).includes('private-identifier'));
+  }
+});
+
 test('supervisor signups are requests and public signups cannot grant privileges',async()=>{
   const db=fakeDatabase(), handler=createHandler({env:ENV,database:db});
   const signup={action:'signup',username:'Leader',password:'x'};

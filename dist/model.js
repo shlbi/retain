@@ -142,11 +142,14 @@ export function metricsFromGroups(groups, totals, goals = DEFAULT_GOALS) {
   return METRICS.map(metric => {
     const { successes, total } = counts[metric.key];
     const rate = total ? successes / total * 100 : null;
+    const opportunityUnit = ['overall', 'sales', 'orders'].includes(metric.key) ? 'call' : 'account';
+    const result = { ...metric, successes, total, opportunityUnit, rate };
     const candidate = goals?.[metric.key];
+    // A team can have measurable results without one shared target.
+    if (candidate === null) return { ...result, goal: null, progress: 0, needed: null, reached: false };
     const goal = Number.isFinite(candidate) && candidate >= 0 && candidate <= 100 ? candidate : metric.goal;
     const progress = rate === null ? 0 : goal === 0 ? 1 : Math.min(rate / goal, 1);
-    const opportunityUnit = ['overall', 'sales', 'orders'].includes(metric.key) ? 'call' : 'account';
-    return { ...metric, successes, total, opportunityUnit, rate, goal, progress, needed: successesNeeded(successes, total, goal), reached: total > 0 && rate >= goal - 1e-8 };
+    return { ...result, goal, progress, needed: successesNeeded(successes, total, goal), reached: total > 0 && rate >= goal - 1e-8 };
   });
 }
 

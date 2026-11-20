@@ -1,5 +1,5 @@
 import { DEFAULT_GOALS, SERVICES } from './model.js';
-import { StorageError, validDay, validateGoals } from './validation.js';
+import { StorageError, validDay, validateGoals, validateGoalPercentage } from './validation.js';
 
 const countFields = ['calls','eligibleCalls','savedCalls','saleCalls','mobileOrders','mobileLines'];
 const groupFields = ['before','kept','added','washed','count'];
@@ -75,11 +75,30 @@ export function validateTallyUpdate(day,delta,requestId) {
   return {day, delta:totals, requestId};
 }
 
-export function validateTallyState(value) {
-  exactFields(value,['version','days','goals']);
+function validateReportDays(value) {
   if (value.version !== 4 || !Array.isArray(value.days)) invalid();
   const days = Array.from(value.days, validateDayTotals);
   if (new Set(days.map(summary => summary.day)).size !== days.length) invalid();
+  return days;
+}
+
+export function validateTallyState(value) {
+  exactFields(value,['version','days','goals']);
   exactFields(value.goals,Object.keys(DEFAULT_GOALS));
-  return {version:4,days,goals:validateGoals(value.goals)};
+  return {version:4,days:validateReportDays(value),goals:validateGoals(value.goals)};
+}
+
+/** A team goal is present only when every current member shares that percentage. */
+export function validateTeamReport(value) {
+  exactFields(value,['version','days','goals','memberCount']);
+  const days = validateReportDays(value);
+  const {memberCount} = value;
+  if (!Number.isSafeInteger(memberCount) || memberCount < 0 || (!memberCount && days.length)) invalid();
+  exactFields(value.goals,Object.keys(DEFAULT_GOALS));
+  const goals = {};
+  for (const [key,goal] of Object.entries(value.goals)) {
+    if ((!memberCount && goal !== null) || (memberCount === 1 && goal === null)) invalid();
+    goals[key] = goal === null ? null : validateGoalPercentage(key,goal);
+  }
+  return {version:4,days,goals,memberCount};
 }

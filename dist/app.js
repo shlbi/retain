@@ -7,7 +7,7 @@ import { historyEditor, readHistoryEditor, outcomeEditor } from './history-edito
 import { createGames } from './games.js';
 import { createTeamGoals, displayRoster } from './team.js';
 import { displayAdminStats } from './performance.js';
-import { validateTallyState } from './tally-validation.js';
+import { validateTallyState, validateTeamReport } from './tally-validation.js';
 import { signupRules } from './signup-rules.js';
 import { createAccountManagement } from './accounts.js';
 import { createNamedTeams } from './named-teams.js';
@@ -66,6 +66,8 @@ const teamGoals = createTeamGoals(async (agentIds,goals) => {
   return result;
 });
 const watchingTeam = () => teamContext.role === 'supervisor';
+// A null selection is the whole named team. An empty string means no scope is available yet.
+const showingTeamReport = () => watchingTeam() && selectedAgentId === null;
 const canLog = () => !!sessionUser && !watchingTeam();
 const selectedAgent = () => teamContext.agents.find(agent => agent.id === selectedAgentId);
 
@@ -86,7 +88,12 @@ function historyRows() {
 }
 function percent(value){return value===null?'—':Number(value.toFixed(1)).toLocaleString('en-US');}
 
-function neededLabel(m){if(m.reached)return icon('check')+'Goal reached';if(m.needed===null)return 'See goal details';return `${m.needed} ${m.unit}${m.needed===1?'':'s'} to goal`;}
+function goalLabel(m) {
+  if (m.goal !== null) return 'Goal '+m.goal+'%';
+  if (!ready) return '';
+  return state.memberCount ? 'Goals vary' : 'No assigned goal';
+}
+function neededLabel(m){if(m.goal===null)return '';if(m.reached)return 'Goal reached';if(m.needed===null)return 'See goal details';return `${m.needed} ${m.unit}${m.needed===1?'':'s'} to goal`;}
 /** Show the underlying counts beside each rate. */
 function countLabel(m) {
   const unit = m.opportunityUnit, total = `${m.total} ${unit}${m.total === 1 ? '' : 's'}`;
@@ -134,8 +141,10 @@ function renderDashboard(){
   const stats = [['calls',day?.calls,'Calls logged'],['leaf',day?.savedCalls,'Calls saved'],['mobile',day?.mobileOrders,'Mobile orders'],['sparkles',day?.mobileLines,'Mobiles sold']];
   $('summary-strip').innerHTML=stats.map(([name,n,label])=>`<div class="summary-item"><span class="summary-icon">${icon(name)}</span><div class="summary-content"><strong>${n ?? 0}</strong><span>${label}</span></div></div>`).join('');
   const circumference=2*Math.PI*56;
-  $('rings-grid').innerHTML=metrics.map(m=>`<button class="ring-card" data-metric="${m.key}" style="--ring-color:${m.color}" aria-label="${m.label}: ${m.rate===null?'no eligible '+m.opportunityUnit+'s':percent(m.rate)+' percent'}, goal ${m.goal} percent. ${m.reached?'Goal reached':m.needed===null?'See goal details':m.needed+' more '+m.unit+(m.needed===1?'':'s')+' needed'}"><div class="ring-visual"><svg class="ring-svg" viewBox="0 0 132 132" aria-hidden="true"><circle class="ring-track" cx="66" cy="66" r="56"/><circle class="ring-progress" cx="66" cy="66" r="56" stroke-dasharray="${circumference}" stroke-dashoffset="${circumference*(1-m.progress)}"/></svg><span class="ring-center"><span class="ring-value">${percent(m.rate)}${m.rate===null?'':'<span>%</span>'}</span><span class="ring-goal">Goal ${m.goal}%</span><span class="ring-needed">${neededLabel(m)}</span></span></div><span class="ring-title">${m.label}</span><span class="ring-count">${countLabel(m)}</span></button>`).join('');
-  $('goals-reached').innerHTML=icon('check')+`${metrics.filter(m=>m.reached).length} of ${metrics.length} goals reached`;
+  $('rings-grid').innerHTML=metrics.map(m=>`<button class="ring-card" data-metric="${m.key}" style="--ring-color:${m.color}" aria-label="${m.label}: ${m.rate===null?'no eligible '+m.opportunityUnit+'s':percent(m.rate)+' percent'}. ${goalLabel(m)}. ${neededLabel(m)}"><div class="ring-visual"><svg class="ring-svg" viewBox="0 0 132 132" aria-hidden="true"><circle class="ring-track" cx="66" cy="66" r="56"/><circle class="ring-progress" cx="66" cy="66" r="56" stroke-dasharray="${circumference}" stroke-dashoffset="${circumference*(1-m.progress)}"/></svg><span class="ring-center"><span class="ring-value">${percent(m.rate)}${m.rate===null?'':'<span>%</span>'}</span><span class="ring-goal">${goalLabel(m)}</span><span class="ring-needed">${m.reached?icon('check'):''}${neededLabel(m)}</span></span></div><span class="ring-title">${m.label}</span><span class="ring-count">${countLabel(m)}</span></button>`).join('');
+  const targets = metrics.filter(m=>m.goal!==null);
+  $('goals-reached').innerHTML = targets.length ? icon('check')+`${targets.filter(m=>m.reached).length} of ${targets.length} ${showingTeamReport()?'shared ':''}goals reached`
+    : ready ? (state.memberCount ? 'No shared goals' : 'No assigned goals') : '';
   $('nav-count').textContent = state.days.reduce((n, item) => n + item.calls, 0);
   const rows = groupedRows(day ? [day] : []);
   $('recent-count').textContent = rows.length;
@@ -145,6 +154,7 @@ function renderDashboard(){
 }
 function renderCallLog() {
   const filtered = historyRows();
+  document.querySelector('[data-action="export"]').disabled = !ready;
 
   const pages=Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));page=Math.min(page,pages-1);
   $('all-calls').innerHTML=groupedTable(filtered.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE), {showDate:allHistory,editable:canLog() && ready});
@@ -176,8 +186,22 @@ function setAdminSection(section, load = true) {
     else loadAdminStats();
   }
 }
+function markReportSelection() {
+  $('workspace-team-report').setAttribute('aria-pressed',String(showingTeamReport()));
+  displayRoster(teamContext.agents,selectedAgentId);
+}
+
+function clearReport() {
+  ready = false;
+  page = 0;
+  state = emptyState();
+  if (showingTeamReport()) state.goals = Object.fromEntries(METRICS.map(metric => [metric.key,null]));
+  $('detail-dialog').close();
+  renderDashboard();
+}
+
 function applyRole(context) {
-  const oldRole = teamContext.role, oldAgent = selectedAgentId;
+  const oldContext = teamContext, oldRole = oldContext.role, oldAgent = selectedAgentId;
   if (oldRole === 'admin' && context.role !== 'admin') {
     clearAdminReport();
     accountManagement.reset();
@@ -187,24 +211,29 @@ function applyRole(context) {
   if (oldRole === 'supervisor' && context.role !== 'supervisor') teamGoals.reset();
   teamContext = context;
   if (sessionUser) games.openSession(sessionUser,context.role,context.teamName,context.supervisorId);
-  $('workspace-team-name').textContent = context.teamName || '';
-  $('workspace-team-name').hidden = !context.teamName;
-  if (!selectedAgent()) selectedAgentId = context.agents[0]?.id || '';
   const supervisor = watchingTeam(), admin = context.role === 'admin';
+  $('workspace-team-name').textContent = context.teamName || '';
+  $('workspace-team-name').hidden = supervisor || !context.teamName;
+  $('team-report-name').textContent = context.teamName || '';
+  $('workspace-team-report').hidden = !supervisor || !context.teamName;
+  $('workspace-team-report').setAttribute('aria-label','View team report for '+(context.teamName || 'your team'));
+  if (!supervisor) selectedAgentId = '';
+  else if (!(showingTeamReport() && context.teamName) && !selectedAgent()) {
+    selectedAgentId = context.agents[0]?.id ?? (context.teamName ? null : '');
+  }
   $('workspace-view').classList.toggle('supervising',supervisor);
   $('team-picker').hidden = !supervisor;
   if (supervisor && oldRole !== 'supervisor') $('team-picker').open = true;
-  displayRoster(context.agents,selectedAgentId);
+  markReportSelection();
   teamGoals.update(context.agents);
   document.querySelector('.entry-column').hidden = supervisor;
   document.querySelectorAll('[data-view="goals"]').forEach(button => button.hidden = !supervisor);
   document.querySelectorAll('[data-view="admin"]').forEach(button => button.hidden = !admin);
-  if (oldRole !== context.role || oldAgent !== selectedAgentId) {
-    ready = false;
-    state = emptyState();
-    $('detail-dialog').close();
+  const teamChanged = showingTeamReport() && (context.teamName !== oldContext.teamName ||
+    context.agents.length !== oldContext.agents.length || context.agents.some((agent,i) => agent.id !== oldContext.agents[i].id));
+  if (oldRole !== context.role || oldAgent !== selectedAgentId || teamChanged) {
     closeEntry();
-    renderDashboard();
+    clearReport();
     setView(view,false);
   }
 }
@@ -223,10 +252,13 @@ function setView(next,scroll=true) {
     else el.removeAttribute('aria-current');
   });
   const name = selectedAgent()?.username;
+  const team = showingTeamReport(), teamName = teamContext.teamName;
+  const count = state.memberCount ?? teamContext.agents.length;
+  const teamDescription = count ? 'Combined results for '+count+' team member'+(count === 1 ? '.' : 's.') : 'No agents are assigned to this team yet.';
   const titles = {
-    today: ['Overview',watchingTeam() ? (name ? name+'’s overview' : 'Team overview') : 'Your day, at a glance.',
-      watchingTeam() ? (name ? 'Daily outcomes and progress toward assigned goals.' : 'No agents are assigned to your team yet.') : 'Every conversation counts. See how yours add up.'],
-    calls: ['Call log',watchingTeam() ? (name ? name+'’s call log' : 'Team call log') : 'Your call log.', 'Daily counts by outcome and service.'],
+    today: ['Overview',team ? teamName+' team overview' : watchingTeam() ? (name ? name+'’s overview' : 'Team overview') : 'Your day, at a glance.',
+      team ? teamDescription : watchingTeam() ? (name ? 'Daily outcomes and progress toward assigned goals.' : 'No agents are assigned to your team yet.') : 'Every conversation counts. See how yours add up.'],
+    calls: ['Call log',team ? teamName+' team call log' : watchingTeam() ? (name ? name+'’s call log' : 'Team call log') : 'Your call log.', team ? teamDescription : 'Daily counts by outcome and service.'],
     goals: ['Goals','Team goals','Set a performance target for everyone or choose individual agents.'],
     admin: ['Admin','Admin',adminSection === 'accounts' ? 'Review requests and manage account access.' : adminSection === 'teams' ? 'Choose supervisors and manage their teams.' : 'See how agents use the tracker and how the app responds.']
   };
@@ -299,22 +331,37 @@ function showHelp() {
     <p>Overall save rate is the share of eligible calls that kept at least one original service on an unpaired account. Each call with an unpaired account enters the denominator once.</p></div>
     <div class="help-rule"><strong>Mobile orders and lines</strong><p>One order can contain 1–12 lines. Two orders with three lines each count as two orders and six lines. Both rates divide by all logged calls, including washes. The first order on an account that started without Mobile also earns one mobile service save.</p></div>
     <div class="help-rule"><strong>Daily goals</strong><p>Reports use Eastern time. Each ring closes when its rate reaches your target. Remaining saves assume every next eligible account or call succeeds. Sales estimates assume one new order or line per next call.</p></div>
+    ${watchingTeam() ? '<div class="help-rule"><strong>Team reports</strong><p>Select the team name to combine the current roster’s counts for each date. Rates use combined successes and opportunities. Each metric with the same target for every member shows progress toward that shared goal.</p></div>' : ''}
     <div class="help-rule"><strong>Saved history</strong><p>Each submission updates your daily totals in Supabase. Accounts with the same outcome and service tags share a row. Mobile orders and lines have their own daily total. Refresh or sign in on another device to see confirmed saves. Use Edit in the call log to correct a past day’s grouped outcomes and totals.</p></div>
     <div class="dialog-actions"><button class="button primary" data-action="close-dialog">Done</button></div>`);
 }
 /** Show the numerator, denominator, and assumptions behind a circle. */
-function showMetric(key){const m=metricsForDay(currentDay(),state.goals).find(m=>m.key===key);if(!m)return;
- let advice=m.reached?'You have reached this goal.':m.needed===null?(['sales','orders'].includes(key)?'Additional orders or lines on future calls can close this gap. One on each new call alone cannot reach an exact 100% target after a missed call.':'After a loss, an exact 100% save rate cannot be reached with a finite number of new eligible opportunities on this date.'):`${m.needed} more ${m.unit}${m.needed===1?'':'s'} on consecutive eligible ${m.opportunityUnit}s would reach your ${m.goal}% goal. Each enters the denominator.`;
- const converted=currentDay()?.saleCalls ?? 0;
- showDialog(m.label,`<div style="--ring-color:${m.color}" class="metric-detail-value">${percent(m.rate)}${m.rate===null?'':'%'}<small>Goal ${m.goal}%</small></div><div class="metric-facts"><div><strong>${m.successes}</strong><span>${key==='sales'?'Mobiles sold':key==='orders'?'Mobile orders':'Saves'}</span></div><div><strong>${m.total}</strong><span>Eligible ${m.opportunityUnit}s</span></div></div><div class="help-rule"><strong>How it's calculated</strong><p>${m.description}</p>${key==='sales'?`<p>Calls with a sale: ${converted} / ${m.total} (${m.total?percent(converted/m.total*100):'—'}%). This is separate from the line-based rate above.</p>`:''}</div><div class="rule-example">${advice}</div><div class="dialog-actions">${watchingTeam() ? '<button class="button secondary" data-action="metric-goals">Team goals</button>' : ''}<button class="button primary" data-action="close-dialog">Done</button></div>`);
+function showMetric(key) {
+  const m = metricsForDay(currentDay(),state.goals).find(metric => metric.key === key);
+  if (!m || !ready) return;
+  let advice;
+  if (m.goal === null) {
+    advice = state.memberCount ? 'Team members have different targets for this metric. Open an agent’s overview to see their progress.' : 'A shared target appears when agents are assigned to the team.';
+  } else if (m.reached) {
+    advice = showingTeamReport() ? 'The team has reached its shared goal.' : 'This goal has been reached.';
+  } else if (m.needed === null) {
+    advice = ['sales','orders'].includes(key)
+      ? 'Additional orders or lines on future calls can close this gap. One on each new call alone cannot reach an exact 100% target after a missed call.'
+      : 'After a loss, an exact 100% save rate cannot be reached with a finite number of new eligible opportunities on this date.';
+  } else {
+    advice = `${m.needed} more ${m.unit}${m.needed===1?'':'s'} on consecutive eligible ${m.opportunityUnit}s would reach the ${m.goal}% goal. Each enters the denominator.`;
+  }
+  const converted = currentDay()?.saleCalls ?? 0;
+  showDialog(m.label,`<div style="--ring-color:${m.color}" class="metric-detail-value">${percent(m.rate)}${m.rate===null?'':'%'}<small>${goalLabel(m)}</small></div><div class="metric-facts"><div><strong>${m.successes}</strong><span>${key==='sales'?'Mobiles sold':key==='orders'?'Mobile orders':'Saves'}</span></div><div><strong>${m.total}</strong><span>Eligible ${m.opportunityUnit}s</span></div></div><div class="help-rule"><strong>How it's calculated</strong><p>${m.description}</p>${key==='sales'?`<p>Calls with a sale: ${converted} / ${m.total} (${m.total?percent(converted/m.total*100):'—'}%). This is separate from the line-based rate above.</p>`:''}</div><div class="rule-example">${advice}</div><div class="dialog-actions">${watchingTeam() ? '<button class="button secondary" data-action="metric-goals">Team goals</button>' : ''}<button class="button primary" data-action="close-dialog">Done</button></div>`);
 }
 
 /** Download a local file without sending records over the network. */
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}
 /** Export the selected date or all-date history, including mobile line quantities. */
 function exportCalls() {
+  if (!ready) return;
   const rows = historyRows();
-  download(new Blob([groupedCsv(rows)], {type:'text/csv;charset=utf-8;'}), `daily-tallies-${allHistory?'all-dates':selectedDay}.csv`);
+  download(new Blob([groupedCsv(rows)], {type:'text/csv;charset=utf-8;'}), `${showingTeamReport()?'team':'daily'}-tallies-${allHistory?'all-dates':selectedDay}.csv`);
   showToast('Grouped totals exported');
 }
 
@@ -412,9 +459,11 @@ async function syncFromStorage(){
    }
    if(pendingRead!==read || read.epoch!==sessionEpoch)return;
    applyRole(context);
-   const fresh = watchingTeam()
-     ? selectedAgentId ? validateTallyState(await apiRequest('agentState',{agentId:selectedAgentId},sessionUser.id)) : emptyState()
-     : await read.source.read();
+   let fresh;
+   if (showingTeamReport()) fresh = validateTeamReport(await apiRequest('teamReport',undefined,sessionUser.id));
+   else if (watchingTeam()) fresh = selectedAgentId
+     ? validateTallyState(await apiRequest('agentState',{agentId:selectedAgentId},sessionUser.id)) : emptyState();
+   else fresh = await read.source.read();
    if(pendingRead!==read||read.epoch!==sessionEpoch)return;
    state=fresh;ready=true;renderDashboard();setView(requestedView || view,false);requestedView = null;
    setBusy(false);$('storage-banner').hidden=true;
@@ -422,7 +471,7 @@ async function syncFromStorage(){
 
  }catch(error){
    if(pendingRead===read&&read.epoch===sessionEpoch&&error.code!=='AUTH'){
-     if (watchingTeam()) { ready=false; state=emptyState();renderDashboard();setBusy(false); }
+     if (watchingTeam()) { clearReport(); setBusy(false); }
      if (teamContext.role === 'admin' && view === 'admin') clearAdminReport();
      storageError(error.message||'Could not refresh your records.');
    }
@@ -602,22 +651,28 @@ $('auth-request-password').addEventListener('click',() => switchAuthMode('reques
 $('auth-enter-code').addEventListener('click',() => switchAuthMode('completePasswordChange'));
 window.addEventListener('session-expired',event=>{if(event.detail?.userId===sessionUser?.id)showSignIn('Your session changed or expired. Sign in again.');});
 $('report-date').addEventListener('change',event=>{const value=event.target.value;if(validDay(value)&&value<=dayKey()){selectedDay=value;allHistory=false;page=0;renderDashboard();}});
-$('team-agent-list').addEventListener('click',async event => {
-  const agentId = event.target.closest('button[data-agent-id]')?.dataset.agentId;
-  if (!watchingTeam() || !teamContext.agents.some(agent => agent.id === agentId)) return;
+async function selectReport(agentId) {
+  if (!watchingTeam()) return;
+  if (agentId === null ? !teamContext.teamName : !teamContext.agents.some(agent => agent.id === agentId)) return;
   const report = view === 'calls' ? 'calls' : 'today';
   if (selectedAgentId === agentId && ready) {
     if (view !== report) setView(report);
     return;
   }
   selectedAgentId = agentId;
-  displayRoster(teamContext.agents,selectedAgentId);
-  // Invalidate pending reads before switching so a slower response cannot paint the previous agent.
-  pendingRead = null; ready = false; state = emptyState(); page = 0;
-  $('detail-dialog').close();setBusy(false);renderDashboard();
+  markReportSelection();
+  // A delayed team or member response belongs to the scope that requested it.
+  pendingRead = null;
+  clearReport();
+  setBusy(false);
   setView(report);
-  $('storage-status').textContent = 'Loading team member…';
+  $('storage-status').textContent = showingTeamReport() ? 'Loading team report…' : 'Loading team member…';
   await syncFromStorage();
+}
+$('workspace-team-report').addEventListener('click',() => selectReport(null));
+$('team-agent-list').addEventListener('click',event => {
+  const button = event.target.closest('button[data-agent-id]');
+  if (button) selectReport(button.dataset.agentId);
 });
 $('refresh-admin').addEventListener('click',loadAdminStats);
 for (const section of ['accounts','performance','teams']) {

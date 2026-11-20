@@ -52,6 +52,7 @@ Use a test workspace and synthetic selections for these checks.
 3. Log two accounts on one call with identical starting services. Keep every original service on one account and disconnect every original service on the other. Confirm that the resulting rows carry the **Wash** tag and that call count increases by one.
 4. Log one mobile order with three lines. Confirm the daily mobile row gains one order and three lines. The first order on an account that started without Mobile also earns one mobile service save.
 5. Export the grouped report. Check that rows contain the expected dates, service tags and account or sales counts. Sign in to a different fresh workspace and verify its totals start empty.
+6. Apply the team report migration before deploying the supervisor team button. With two test agents on one named team, click its name in the supervisor sidebar. Verify the combined Overview counts and grouped Call log, then select an agent and check their individual totals.
 
 Production history resides in Supabase. A browser refresh before submitting discards the current form. After a confirmed save, refreshing reloads the grouped totals. When storage cannot confirm a submission, check the current totals or use the retry action on the pending form before starting a new entry.
 
