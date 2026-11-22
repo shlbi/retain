@@ -36,7 +36,9 @@ Each report date has one row per combination of outcome and service tags. Identi
 | SPS · Internet kept | 11 accounts |
 | Mobile sold | 6 orders · 9 lines |
 
-Use **Edit** on a call-log row to correct that date’s grouped service outcomes, account counts and call or mobile totals. Changes update the daily stats in Supabase. An edit is rejected if the day has changed since the editor opened.
+In your own **Call log**, choose **Edit call** on an outcome or mobile-sales row. A single-call date opens with the original selections filled in. When multiple calls could match, choose the account outcomes and mobile totals that belonged to the call. Supabase stores daily groups, so it can’t recover which accounts or orders went together on those dates.
+
+Change the starting, kept or added services, add or remove accounts, adjust mobile orders and lines, or change the Eastern report date. Under **Mobile sales**, mark which accounts gained Mobile service. **Save changes** updates the affected dates and recalculates their rates. To undo a mistaken entry, choose **Remove call** and confirm. **Edit day totals** opens the bulk editor. A correction checks both date snapshots and can be retried safely. Supervisors can view agent and team logs. Agents edit their own history.
 
 The account counts and the sales counts use different units. For example, a call handling two accounts can increase two account counts, but still increases the daily call count by one. The grouped CSV includes the report date, outcome, service changes and counts in the chosen view.
 

@@ -31,11 +31,11 @@ export function groupedRows(days, filter = 'all') {
   const rows = [];
   for (const day of [...days].sort((a, b) => b.day.localeCompare(a.day))) {
     const groups = [];
-    for (const group of day.groups) {
+    for (const [groupIndex,group] of day.groups.entries()) {
       const outcome = classifyAccount(group);
       if (!outcome || !group.count || !includeGroup(outcome, group.washed, filter)) continue;
       groups.push({
-        day: day.day, outcome: outcome.code, kind: outcome.kind, washed: group.washed,
+        groupIndex, day: day.day, outcome: outcome.code, kind: outcome.kind, washed: group.washed,
         kept: serviceNames(outcome.kept), disconnected: serviceNames(outcome.disconnected),
         added: serviceNames(outcome.added), count: group.count
       });
@@ -80,7 +80,7 @@ export function groupedTable(rows, {showDate = false, empty = 'No saved outcomes
       ? `${countLabel(row.orders, 'order')} · ${countLabel(row.lines, 'line')}`
       : countLabel(row.count, 'account');
     const date = showDate ? `<td class="tally-date"><time datetime="${escapeHtml(row.day)}">${formatDay.format(new Date(row.day + 'T00:00:00Z'))}</time></td>` : '';
-    return `<tr>${date}<td><span class="outcome-tags">${rowTags(row)}</span></td><td class="tally-count">${count}${editable ? `<button class="tally-edit" data-action="edit-history" data-day="${row.day}" aria-label="Edit totals for ${row.day}">Edit</button>` : ''}</td></tr>`;
+    return `<tr>${date}<td><span class="outcome-tags">${rowTags(row)}</span></td><td class="tally-count">${count}${editable ? `<button class="tally-edit" data-action="edit-call" data-day="${row.day}" data-group="${row.groupIndex ?? -1}" aria-label="Edit one call from ${escapeHtml(row.outcome)} on ${row.day}">Edit call</button>` : ''}</td></tr>`;
   }).join('');
   return `<table class="tally-table"><thead><tr>${showDate ? '<th scope="col">Date</th>' : ''}<th scope="col">Outcome tags</th><th scope="col" class="tally-count">Count</th></tr></thead><tbody>${body}</tbody></table>`;
 }

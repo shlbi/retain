@@ -60,28 +60,37 @@ export function classifyCall(before, kept) {
   return { code, saved, tier, disconnected };
 }
 
-/** Match one complete save with one complete loss of identical original services on this call. */
-export function outcomesForCall(call) {
-  const outcomes = [];
-  const matchingAccounts = new Map();
-  accountsFor(call).forEach((account, index) => {
+/** Pair full saves and losses of the same starting mix. Counts let corrections score
+ * many identical accounts without expanding the saved history into individual rows. */
+export function accountOutcomes(accounts, quantity = () => 1) {
+  const outcomes = [], balances = new Map();
+  accounts.forEach((account, index) => {
     const result = classifyAccount(account);
     if (!result) return;
-    const outcome = { ...result, index, account: account.account ?? '', washed: false };
-    outcomes.push(outcome);
-    if (outcome.kind === 'downgrade') return;
-    // classifyAccount emits service keys in a stable order, including on legacy calls.
-    const signature = outcome.before.join(',');
-    if (!matchingAccounts.has(signature)) matchingAccounts.set(signature, { save: [], disconnect: [] });
-    matchingAccounts.get(signature)[outcome.kind].push(outcome);
+    const count = quantity(account);
+    const signature = result.before.join(',');
+    outcomes.push({...result, index, account: account.account ?? '', count, signature});
+    if (result.kind === 'downgrade') return;
+    if (!balances.has(signature)) balances.set(signature, {save:0, disconnect:0});
+    balances.get(signature)[result.kind] += count;
   });
-  for (const { save, disconnect } of matchingAccounts.values()) {
-    for (let index = 0; index < Math.min(save.length, disconnect.length); index++) {
-      save[index].washed = true;
-      disconnect[index].washed = true;
-    }
+  for (const balance of balances.values()) {
+    const pairs = Math.min(balance.save, balance.disconnect);
+    balance.save = balance.disconnect = pairs;
   }
-  return outcomes;
+  return outcomes.flatMap(({signature, ...outcome}) => {
+    const balance = balances.get(signature);
+    const washed = outcome.kind === 'downgrade' ? 0 : Math.min(outcome.count, balance[outcome.kind]);
+    if (washed) balance[outcome.kind] -= washed;
+    const parts = [];
+    if (washed) parts.push({...outcome, washed:true, count:washed});
+    if (outcome.count > washed) parts.push({...outcome, washed:false, count:outcome.count - washed});
+    return parts;
+  });
+}
+
+export function outcomesForCall(call) {
+  return accountOutcomes(accountsFor(call));
 }
 
 /** Read independent mobile orders, using legacy counts only when canonical orders are absent. */

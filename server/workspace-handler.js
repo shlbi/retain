@@ -1,3 +1,4 @@
+import { correctionChanges } from '../dist/call-correction.js';
 import { DEFAULT_GOALS } from '../dist/model.js';
 import { StorageError } from '../dist/validation.js';
 import { validateDayTotals, validateTallyState, validateTallyUpdate, validateTeamReport } from '../dist/tally-validation.js';
@@ -6,6 +7,7 @@ import { gameConnection } from './game-connection.js';
 import { ApiError, createDatabase, invalidReset } from './database.js';
 
 const ACTION_FIELDS = {signup:['username','password','requestedRole'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value'],editDay:['expected','replacement'],
+  correctCall:['source','destinationDay','destination','original','revised','requestId'],
   adminCreateAccount:['username','password','role','supervisorId'],adminReviewSignup:['requestId','decision','role','supervisorId'],
   adminAssignAccount:['accountId','role','supervisorId','expectedRole','expectedSupervisorId'],
   adminSaveTeam:['supervisorId','name','expectedName'],adminAddTeamMembers:['supervisorId','members'],
@@ -404,6 +406,16 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
             p_user_id:user.id,p_day:day,p_delta:delta,p_request_id:requestId
           }),validateDayTotals);
           if (result.day !== day) throw new ApiError(503,'STORAGE','Could not confirm the saved day.');
+          break;
+        }
+        case 'correctCall': {
+          const changes = correctionChanges(body);
+          result = await db.rpc('workspace_correct_call',{p_user_id:user.id,p_changes:changes,p_request_id:body.requestId});
+          if (!Array.isArray(result) || result.length !== changes.length ||
+              result.some((row,i) => row?.day !== changes[i].day || (row.summary !== null && row.summary?.day !== row.day))) {
+            throw new ApiError(503,'STORAGE','Could not confirm the correction. Retry the same change.');
+          }
+          result = result.map(({day,summary}) => ({day,summary:summary === null ? null : safeResult(summary,validateDayTotals)}));
           break;
         }
         case 'editDay': {

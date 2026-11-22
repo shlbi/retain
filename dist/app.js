@@ -1,3 +1,4 @@
+import { openCallEditor } from './call-editor.js';
 import { METRICS, DEFAULT_GOALS, dayKey } from './model.js';
 import { tallyForCall, metricsForDay } from './tally.js';
 import { createTallyEntry } from './entry-tally.js';
@@ -332,7 +333,7 @@ function showHelp() {
     <div class="help-rule"><strong>Mobile orders and lines</strong><p>One order can contain 1–12 lines. Two orders with three lines each count as two orders and six lines. Both rates divide by all logged calls, including washes. The first order on an account that started without Mobile also earns one mobile service save.</p></div>
     <div class="help-rule"><strong>Daily goals</strong><p>Reports use Eastern time. Each ring closes when its rate reaches your target. Remaining saves assume every next eligible account or call succeeds. Sales estimates assume one new order or line per next call.</p></div>
     ${watchingTeam() ? '<div class="help-rule"><strong>Team reports</strong><p>Select the team name to combine the current roster’s counts for each date. Rates use combined successes and opportunities. Each metric with the same target for every member shows progress toward that shared goal.</p></div>' : ''}
-    <div class="help-rule"><strong>Saved history</strong><p>Each submission updates your daily totals in Supabase. Accounts with the same outcome and service tags share a row. Mobile orders and lines have their own daily total. Refresh or sign in on another device to see confirmed saves. Use Edit in the call log to correct a past day’s grouped outcomes and totals.</p></div>
+    <div class="help-rule"><strong>Saved history</strong><p>Each submission updates your daily totals in Supabase. Accounts with the same outcome and service tags share a row. Mobile orders and lines have their own daily total. Refresh or sign in on another device to see confirmed saves. In your call log, choose Edit call to change one call’s services, accounts, mobile sales or report date, or remove the call. When several calls share a date, confirm which outcomes and sales belonged to yours. Use Edit day totals for a bulk correction.</p></div>
     <div class="dialog-actions"><button class="button primary" data-action="close-dialog">Done</button></div>`);
 }
 /** Show the numerator, denominator, and assumptions behind a circle. */
@@ -363,6 +364,30 @@ function exportCalls() {
   const rows = historyRows();
   download(new Blob([groupedCsv(rows)], {type:'text/csv;charset=utf-8;'}), `${showingTeamReport()?'team':'daily'}-tallies-${allHistory?'all-dates':selectedDay}.csv`);
   showToast('Grouped totals exported');
+}
+
+function editCall(day, groupIndex) {
+  if (!canLog() || busy || !ready || !repo) return;
+  const days = structuredClone(state.days), source = days.find(item => item.day === day);
+  if (!source || (groupIndex !== -1 && !source.groups[groupIndex])) return;
+  openCallEditor({source,days,groupIndex,showDialog,close:() => $('detail-dialog').close(),
+    editDay:() => openHistoryEditor(day),
+    save:async correction => {
+      let affected;
+      try {
+        affected = await writeToStore(store => store.correctCall(correction));
+      } catch (error) {
+        if (error.code === 'CONFLICT') await syncFromStorage();
+        throw error;
+      }
+      const dates = new Set(affected.map(row => row.day));
+      state.days = [...state.days.filter(item => !dates.has(item.day)), ...affected.flatMap(row => row.summary ?? [])];
+      if (!allHistory) selectedDay = correction.destinationDay;
+      $('detail-dialog').close();
+      renderDashboard();
+      showToast(correction.revised ? 'Call updated' : 'Call removed');
+    }
+  });
 }
 
 function openHistoryEditor(day) {
@@ -423,9 +448,9 @@ async function onClick(event) {
     case 'sign-out': await signOut(); break;
     case 'confirm-sign-out': await finishSignOut(); break;
     case 'toggle-password': setPasswordVisible($('password').type==='password'); break;
-    case 'edit-history': openHistoryEditor(button.dataset.day); break;
+    case 'edit-call': editCall(button.dataset.day,Number(button.dataset.group)); break;
     case 'help': showHelp(); break;
-    case 'close-dialog': $('detail-dialog').close(); break;
+    case 'close-dialog': if (!(busy && $('correction-form'))) $('detail-dialog').close(); break;
     case 'metric-goals': $('detail-dialog').close(); setView('goals'); break;
     case 'export': exportCalls(); break;
     case 'all-history': allHistory=!allHistory; page=0; renderCallLog(); break;
@@ -633,7 +658,7 @@ document.addEventListener('click',event=>{onClick(event).catch(e=>storageError(e
 document.addEventListener('keydown',onKeydown);
 
 $('detail-dialog').addEventListener('cancel', event => {
-  if (busy && $('history-edit-form')) event.preventDefault();
+  if (busy && ($('history-edit-form') || $('correction-form'))) event.preventDefault();
 });
 $('auth-form').addEventListener('submit',submitAuth);
 $('auth-form').addEventListener('input', ({target}) => {

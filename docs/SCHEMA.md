@@ -19,6 +19,10 @@ The November 19, 2026 inventory found ten application tables in `workspace_priva
 | `bingo_scores` | A player's accumulated scoring counters for one game | Primary key `(game_id, user_id)`. These IDs reference `bingo_games.id` and `users.id`. |
 | `request_days` | Authenticated API request count, HTTP 5xx count and total measured handling time for an Eastern date | Primary key `day`. The admin charts combine these daily measurements with aggregate activity from `tally_days`. |
 
+## Call corrections
+
+The authenticated API calculates the change from one original call contribution and its replacement. The new `workspace_correct_call` routine applies the source and destination totals in one transaction, under the same user lock as call entry. The private implementation checks the agent or admin role, compares both expected dates, and removes a day when its last call is removed. A retry uses the existing digest-only receipt table. Only the server role can execute the routine. The database retains daily outcome groups and counters. It does not retain the original and revised calls or an order-to-account association.
+
 ## Teams and read access
 
 `workspace_team_report(p_user_id)` serves the supervisor's combined Overview and Call log. It verifies that the signed-in user supervises a named team, then reads the current members' `tally_days` and `tally_groups`. It sums daily call and mobile counts separately from account outcome groups so calls with multiple accounts count once. Identical groups on the same date share a row. Rates use the combined numerators and denominators. Each goal is the common assigned target for that metric or null if the roster is empty or targets differ. The report is computed on read and introduces no new table.

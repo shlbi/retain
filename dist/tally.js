@@ -22,16 +22,19 @@ export function tallyForCall(call) {
   if (!outcomes.length || (call.accounts && outcomes.length !== call.accounts.length)) {
     throw new Error('Choose starting services for each account.');
   }
-  const groups = new Map();
-  for (const outcome of outcomes) accumulateGroup(groups, outcome, 1);
   const orders = ordersFor(call);
+  return tallyFromOutcomes(outcomes, orders.length, orders.reduce((sum, lines) => sum + lines, 0));
+}
+
+export function tallyFromOutcomes(outcomes, mobileOrders, mobileLines) {
+  const groups = new Map();
+  for (const outcome of outcomes) accumulateGroup(groups, outcome, outcome.count);
   return {
     calls: 1,
     eligibleCalls: Number(outcomes.some(outcome => !outcome.washed)),
     savedCalls: Number(outcomes.some(outcome => !outcome.washed && outcome.saved)),
-    mobileOrders: orders.length,
-    mobileLines: orders.reduce((sum, lines) => sum + lines, 0),
-    saleCalls: Number(orders.length > 0),
+    mobileOrders, mobileLines,
+    saleCalls: Number(mobileOrders > 0),
     groups: sortedGroups(groups)
   };
 }

@@ -690,3 +690,20 @@ test('game scheduling has no team override and game reads use the current sessio
   await request(handler,{cookie,method:'GET',url:'/api/workspace?action=gameState&supervisorId='+USER_B.id});
   assert.deepEqual(db.calls.find(c => c.name === 'workspace_game_state').args,{p_user_id:USER_A.id});
 });
+
+test('one-call corrections bind both dates to the signed-in agent and reject spoofed fields',async()=>{
+  const db = fakeDatabase(), cookie = session();
+  const handler = createHandler({env:ENV,database:{async rpc(name,args) {
+    if (name === 'workspace_correct_call') {
+      assert.equal(args.p_user_id,USER_A.id);
+      assert.equal(args.p_request_id,requestId);
+      return args.p_changes.map(({day,replacement}) => ({day,summary:replacement}));
+    }
+    return db.rpc(name,args);
+  }}});
+  const body = {action:'correctCall',requestId,source:{day,...delta},original:delta,revised:null,destinationDay:day,destination:null};
+  assert.deepEqual((await request(handler,{body,cookie})).body,[{day,summary:null}]);
+  assert.equal((await request(handler,{body,cookie,expected:USER_B.id})).status,401);
+  assert.equal((await request(handler,{body:{...body,userId:USER_B.id},cookie})).status,400);
+  assert.equal((await request(handler,{body:{...body,original:{...delta,accountNumber:'ignored?'}},cookie})).status,400);
+});

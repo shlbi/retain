@@ -53,6 +53,7 @@ export function createRepository(userId, request = apiRequest) {
       } catch { /* The write may have committed before the response was damaged. */ }
       throw new StorageError('STORAGE','Could not confirm the saved day. Use Retry save.');
     },
+    correctCall(correction) { return call('correctCall',correction); },
     async editDay(expected, replacement) {
       const previous = validateDayTotals(expected), next = validateDayTotals(replacement);
       if (previous.day !== next.day) throw new StorageError('VALIDATION','Choose the same report date.');
