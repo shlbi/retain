@@ -268,7 +268,7 @@ function setView(next,scroll=true) {
     today: ['Overview',team ? teamName+' team overview' : watchingTeam() ? (name ? name+'’s overview' : 'Team overview') : 'Your day, at a glance.',
       team ? teamDescription : watchingTeam() ? (name ? 'Daily outcomes and progress toward assigned goals.' : 'No agents are assigned to your team yet.') : 'Every conversation counts. See how yours add up.'],
     calls: ['Call log',team ? teamName+' team call log' : watchingTeam() ? (name ? name+'’s call log' : 'Team call log') : 'Your call log.', team ? teamDescription : 'Daily counts by outcome and service.'],
-    goals: ['Goals','Team goals','Set a performance target for everyone or choose individual agents.'],
+    goals: ['Goals','Team goals','Review all targets and save them for your team or selected agents.'],
     admin: ['Admin','Admin',adminSection === 'games' ? 'Manage game access and schedule a team round.' : adminSection === 'accounts' ? 'Review requests and manage account access.' : adminSection === 'teams' ? 'Choose supervisors and manage their teams.' : 'See how agents use the tracker and how the app responds.']
   };
   const [label,title,description] = titles[view];

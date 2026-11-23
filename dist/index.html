@@ -152,19 +152,18 @@
       <section id="view-goals" class="view" hidden>
         <form class="panel team-goals" id="team-goals-form">
           <fieldset>
-            <legend>Set a goal</legend>
-            <div class="goal-fields">
-              <label>Metric<select id="target-metric"></select></label>
-              <label>Goal (%)<input id="target-value" type="number" min="5" max="100" step="1" required></label>
-            </div>
-            <p class="team-secondary" id="current-target"></p>
             <fieldset class="goal-audience">
               <legend>Apply to</legend>
               <label><input type="radio" name="audience" value="all" checked>Whole team</label>
               <label><input type="radio" name="audience" value="selected">Selected agents</label>
             </fieldset>
             <div id="target-agent-list" class="target-agent-list" hidden></div>
-            <button type="submit" class="button primary" id="apply-team-goal">Apply goal</button>
+            <fieldset class="goal-targets">
+              <legend>Goal percentages</legend>
+              <p id="mixed-goals" class="team-secondary" hidden>Some targets vary by agent. Enter a percentage for each blank field to apply one set of goals.</p>
+              <div id="goal-fields" class="goal-fields"></div>
+            </fieldset>
+            <button type="submit" class="button primary" id="apply-team-goal">Save goals</button>
             <p id="team-goal-status" role="status" class="team-secondary"></p>
           </fieldset>
         </form>

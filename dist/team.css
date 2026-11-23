@@ -11,16 +11,19 @@
 .team-roster :is(summary,button):focus-visible {outline:2px solid #285d99;outline-offset:1px}
 #team-roster-empty {margin:2px 10px 8px 31px;color:#526780;font-size:13px;line-height:1.5}
 @media(max-width:1040px) {#team-agent-list button {min-height:44px}}
-.goal-fields select, .goal-fields input {border:1px solid #cbd9e9; color:#183b66; background:white; border-radius:8px; min-height:42px; padding:7px 10px; font:inherit; min-width:0}
+.goal-fields input {border:1px solid #cbd9e9; color:#183b66; background:white; border-radius:8px; min-height:42px; padding:7px 10px; font:inherit; min-width:0}
 #workspace-view [hidden] {display:none!important}
 #workspace-view.supervising .overview-grid {grid-template-columns:minmax(0,1fr)}
 .team-goals {max-width:680px; padding:clamp(20px,4vw,36px)}
 .team-goals fieldset {border:0;padding:0;margin:0;min-width:0}
 .team-goals legend, .admin-panel h2 {font-size:18px;font-weight:650;color:#203953;margin:0 0 20px}
-.goal-fields {display:grid;grid-template-columns:minmax(0,2fr) minmax(90px,1fr);gap:14px}
-.goal-fields label {display:grid;gap:6px;font-size:13px;color:#294360}
+.goal-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:0 24px}
+.goal-fields label {display:grid;grid-template-columns:1fr 64px auto;align-items:center;gap:6px;padding:8px 0;border-top:1px solid #e2eaf3;font-size:14px;color:#294360}
+.goal-fields input {width:100%;box-sizing:border-box;text-align:center}
+.team-goals .goal-targets {margin:20px 0 24px}
+.team-goals .goal-targets legend {font-size:16px;margin-bottom:10px}
 .team-secondary,.admin-panel p {color:#526881;font-size:13px;line-height:1.5}
-.team-goals .goal-audience {margin:28px 0 18px}
+.team-goals .goal-audience {margin:0 0 12px}
 .goal-audience legend {font-size:14px;margin-bottom:10px}
 .goal-audience label,.target-agent-list label {display:inline-flex;align-items:center;gap:8px;padding:8px 14px 8px 0;font-size:14px}
 .goal-audience input,.target-agent-list input {accent-color:#2563a6}

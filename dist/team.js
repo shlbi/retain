@@ -38,33 +38,47 @@ export function displayRoster(agents, selectedId) {
 }
 
 export function createTeamGoals(applyGoals) {
-  const form = $('team-goals-form'), metric = $('target-metric'), value = $('target-value');
+  const form = $('team-goals-form');
   const agentList = $('target-agent-list'), status = $('team-goal-status');
-  let agents = [], submitting = false, generation = 0, targetEdited = false;
-  metric.replaceChildren(...METRICS.map(item => new Option(item.label,item.key)));
+  let agents = [], submitting = false, generation = 0;
+  const edited = new Set(), inputs = new Map();
+  for (const {key,label} of METRICS) {
+    const row = create('label',label);
+    const input = create('input');
+    input.type = 'number'; input.name = key; input.min = '5'; input.max = '100';
+    input.step = '1'; input.required = true; input.inputMode = 'numeric';
+    const suffix = create('span','%');
+    suffix.setAttribute('aria-hidden','true');
+    row.append(input,suffix);
+    $('goal-fields').append(row);
+    inputs.set(key,input);
+    input.addEventListener('input', () => { edited.add(key); status.textContent = ''; });
+  }
 
   function selected() {
     return form.elements.audience.value === 'all' ? agents : agents.filter(agent =>
       Array.from(agentList.querySelectorAll('input:checked')).some(input => input.value === agent.id));
   }
-  function summarize(prefill = false) {
+  function summarize() {
     const recipients = selected();
-    const values = recipients.map(agent => agent.goals[metric.value] ?? DEFAULT_GOALS[metric.value]);
-    const current = new Set(values);
-    if (prefill) value.value = current.size === 1 ? values[0] : '';
+    let mixed = false;
+    for (const [key,input] of inputs) {
+      const targets = new Set(recipients.map(agent => agent.goals[key] ?? DEFAULT_GOALS[key]));
+      if (!edited.has(key)) input.value = targets.size === 1 ? [...targets][0] : '';
+      input.placeholder = targets.size > 1 ? 'Varies' : '';
+      mixed ||= targets.size > 1 && !input.value;
+      input.disabled = !recipients.length;
+    }
+    $('mixed-goals').hidden = !mixed;
     const unit = recipients.length === 1 ? 'agent' : 'agents';
-    $('current-target').textContent = current.size === 1 ? 'Current goal: ' + values[0] + '%' :
-      current.size ? 'Current goals vary across these agents.' : 'Choose agents to see their current goal.';
-    $('apply-team-goal').textContent = 'Apply to ' + recipients.length + ' ' + unit;
+    $('apply-team-goal').textContent = recipients.length ? 'Save goals for ' + recipients.length + ' ' + unit : 'Save goals';
     $('apply-team-goal').disabled = !recipients.length || submitting;
     agentList.hidden = form.elements.audience.value === 'all';
     form.querySelector('fieldset').disabled = submitting;
   }
-  // A drafted percentage belongs to its metric and survives recipient or roster changes.
-  value.addEventListener('input', () => { targetEdited = true; status.textContent = ''; });
-  form.addEventListener('change', e => {
-    if (e.target === metric) targetEdited = false;
-    if (e.target !== value) summarize(!targetEdited);
+  form.addEventListener('change', event => {
+    if (!event.target.matches('input[type="radio"],input[type="checkbox"]')) return;
+    summarize();
     status.textContent = '';
   });
   form.addEventListener('submit', async event => {
@@ -73,17 +87,17 @@ export function createTeamGoals(applyGoals) {
     submitting = true;
     const version = generation;
     const ids = form.elements.audience.value === 'all' ? null : selected().map(agent => agent.id);
-    const key = metric.value, target = Number(value.value);
-    status.textContent = 'Applying goal…';
+    const goals = Object.fromEntries(Array.from(inputs, ([key,input]) => [key,input.valueAsNumber]));
+    status.textContent = 'Saving goals…';
     summarize();
     try {
-      const result = await applyGoals(ids,{[key]:target});
+      const result = await applyGoals(ids,goals);
       if (version !== generation) return;
-      targetEdited = false;
-      agents = agents.map(agent => !ids || ids.includes(agent.id) ? {...agent,goals:{...agent.goals,[key]:target}} : agent);
-      status.textContent = 'Goal set to ' + target + '% for ' + result.updated + (result.updated === 1 ? ' agent.' : ' agents.');
+      edited.clear();
+      agents = agents.map(agent => !ids || ids.includes(agent.id) ? {...agent,goals:{...agent.goals,...goals}} : agent);
+      status.textContent = 'Goals saved for ' + result.updated + (result.updated === 1 ? ' agent.' : ' agents.');
     } catch (error) {
-      if (version === generation) status.textContent = error.message || 'Could not apply this goal. Try again.';
+      if (version === generation) status.textContent = error.message || 'Could not save goals. Try again.';
     } finally {
       if (version === generation) { submitting = false; summarize(); }
     }
@@ -102,11 +116,11 @@ export function createTeamGoals(applyGoals) {
           return label;
         }));
       }
-      summarize(!targetEdited && !submitting);
+      summarize();
     },
     reset() {
-      generation++; submitting = false; targetEdited = false; agents = [];
-      form.reset(); agentList.replaceChildren(); status.textContent = ''; summarize(true);
+      generation++; submitting = false; edited.clear(); agents = [];
+      form.reset(); agentList.replaceChildren(); status.textContent = ''; summarize();
     }
   };
 }

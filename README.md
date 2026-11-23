@@ -26,7 +26,7 @@ Selecting Mobile as a starting service opens **Started with** and **Ended with**
 
 Reports exclude matched wash pairs from original-service, play and subscriber opportunities. A full save and a full disconnect on two accounts with the same starting services form a wash. Downgrades count for individual services and subscriber retention. A three-to-two downgrade appears as **TP → DP**. A four-to-three downgrade appears as **4 services → TP**. Added services can earn service credit. Historical groups without recorded mobile balances contribute to the other applicable rates and are left out of line retention.
 
-Daily reports use Eastern time. The supervisor sets the team's targets.
+Daily reports use Eastern time. In **Goals**, the supervisor chooses the whole team or selected agents, reviews all eleven percentages together, then saves the full set once. Shared targets are prefilled. A blank field marked **Varies** requires a percentage before saving.
 
 ### Grouped history
 
