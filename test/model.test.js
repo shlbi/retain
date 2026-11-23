@@ -37,7 +37,7 @@ test('downgrades on both new and historical records exclude every play tier and 
     [['internet','tv'], ['tv'], 'DP → SP'],
     [['internet','tv','phone'], ['tv','phone'], 'TP → DP'],
     [['internet','tv','phone'], ['phone'], 'TP → SP'],
-    [['internet','tv','phone','mobile'], ['tv','phone','mobile'], 'TP (4 → 3)']
+    [['internet','tv','phone','mobile'], ['tv','phone','mobile'], '4 services → TP']
   ];
   for (const [before,kept,code] of examples) {
     const account = {account:'A', before, kept, added:[]};
@@ -246,12 +246,12 @@ test('a metric without a shared team target still reports its actual counts and 
     {successes:1,total:2,rate:50,goal:null,progress:0,needed:null,reached:false});
 });
 
-test('mobile counts as a service and TP explicitly groups three or four services', () => {
+test('four-service history has its own tags and retains its legacy aggregate', () => {
   const all = ['internet', 'tv', 'phone', 'mobile'];
   assert.equal(classifyCall(['mobile'], ['mobile']).code, 'SPS');
-  assert.equal(classifyCall(all, all).code, 'TPS');
-  assert.equal(classifyCall(all, []).code, 'TPD');
-  assert.equal(classifyCall(all, ['internet', 'mobile']).code, 'TP → DP');
+  assert.equal(classifyCall(all, all).code, '4-service save');
+  assert.equal(classifyCall(all, []).code, '4-service disconnect');
+  assert.equal(classifyCall(all, ['internet', 'mobile']).code, '4 services → DP');
   const tp = metric([call(all, all), call(all, [])], 'tp');
   assert.equal(tp.rate, 50);
   assert.equal(tp.label, 'Triple-play (3+)');

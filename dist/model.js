@@ -6,7 +6,7 @@ export const SERVICES = [
   { key: 'mobile', label: 'Mobile', short: 'Mobile', icon: 'mobile', color: '#7579ad' }
 ];
 
-export const METRICS = [
+const legacyMetrics = [
   { key: 'overall', label: 'Overall save', color: '#2563a6', icon: 'target', goal: 85, unit: 'save', description: 'Eligible calls keeping at least one original service ÷ calls with at least one unpaired account. Matched wash accounts are excluded.' },
   { key: 'internet', label: 'Internet save', color: '#337faa', icon: 'internet', goal: 85, unit: 'save', description: 'Internet kept or added ÷ accounts that started with or added internet. Paired wash accounts are excluded for their original services.' },
   { key: 'tv', label: 'Video save', color: '#537db2', icon: 'tv', goal: 75, unit: 'save', description: 'Video kept or added ÷ accounts that started with or added video. Downgrades count for each original service.' },
@@ -20,7 +20,21 @@ export const METRICS = [
   { key: 'sales', label: 'Mobile lines', color: '#467ba8', icon: 'mobile', goal: 20, unit: 'line', description: 'New mobile lines sold ÷ all logged calls. Each order contains 1–12 lines; lines across multiple orders are added together, so the rate can exceed 100%.' }
 ];
 
-export const DEFAULT_GOALS = Object.fromEntries(METRICS.map(metric => [metric.key, metric.goal]));
+const metric = (key,label,description,base) => ({...legacyMetrics.find(m => m.key === base), key,label,description});
+const additionalMetrics = [
+  metric('lineSave','Mobile line save rate','Ending lines, capped at starting lines, ÷ starting lines on eligible accounts with recorded balances. Sales count separately. Older entries without balances are excluded.','mobile'),
+  metric('exactTp','TPS','Full saves ÷ full saves and full disconnects on accounts starting with exactly three services.','tp'),
+  metric('spInternet','SP Internet','Internet-only accounts that kept internet ÷ eligible accounts starting with internet only.','internet'),
+  metric('subscriber','Subscriber save rate','Accounts keeping at least one original service ÷ eligible accounts. Matched wash accounts are excluded.','overall')
+];
+const allMetrics = [...legacyMetrics,...additionalMetrics];
+export const reportKeys = ['internet','sp','tv','lineSave','sales','orders','phone','dp','exactTp','spInternet','subscriber'];
+const labels = {internet:'Internet save rate',sp:'SPS',tv:'Video save rate',sales:'Mobile line yield',orders:'Mobile order yield',phone:'Voice save rate',dp:'DPS'};
+export const METRICS = reportKeys.map(key => {
+  const m = allMetrics.find(item => item.key === key);
+  return {...m,label:labels[key] ?? m.label};
+});
+export const DEFAULT_GOALS = Object.fromEntries(allMetrics.map(metric => [metric.key, metric.goal]));
 
 const SERVICE_KEYS = SERVICES.map(service => service.key);
 const PLAY_NAMES = ['', 'SP', 'DP', 'TP'];
@@ -44,10 +58,10 @@ export function classifyAccount(account) {
   const tier = Math.min(before.length, 3);
   const saved = kept.length > 0;
   let kind = saved ? 'save' : 'disconnect';
-  let code = PLAY_NAMES[tier] + (saved ? 'S' : 'D');
+  let code = before.length === 4 ? (saved ? '4-service save' : '4-service disconnect') : PLAY_NAMES[tier] + (saved ? 'S' : 'D');
   if (saved && disconnected.length > 0) {
     kind = 'downgrade';
-    code = kept.length === 3 ? 'TP (4 → 3)' : PLAY_NAMES[tier] + ' → ' + PLAY_NAMES[kept.length];
+    code = (before.length === 4 ? '4 services' : PLAY_NAMES[tier]) + ' → ' + PLAY_NAMES[kept.length];
   }
   return { code, kind, saved, tier, before, kept, added, disconnected };
 }
@@ -69,7 +83,7 @@ export function accountOutcomes(accounts, quantity = () => 1) {
     if (!result) return;
     const count = quantity(account);
     const signature = result.before.join(',');
-    outcomes.push({...result, index, account: account.account ?? '', count, signature});
+    outcomes.push({...result, ...(account.lineStart !== undefined ? {lineStart:account.lineStart,lineEnd:account.lineEnd} : {}), index, account: account.account ?? '', count, signature});
     if (result.kind === 'downgrade') return;
     if (!balances.has(signature)) balances.set(signature, {save:0, disconnect:0});
     balances.get(signature)[result.kind] += count;
@@ -129,7 +143,7 @@ export function successesNeeded(successes, opportunities, targetPercent) {
 
 /** Score a day using group counts, including any service added on a washed account. */
 export function metricsFromGroups(groups, totals, goals = DEFAULT_GOALS) {
-  const counts = Object.fromEntries(METRICS.map(metric => [metric.key, { successes: 0, total: 0 }]));
+  const counts = Object.fromEntries(allMetrics.map(metric => [metric.key, { successes: 0, total: 0 }]));
   counts.overall = { successes: totals.savedCalls, total: totals.eligibleCalls };
   counts.orders = { successes: totals.mobileOrders, total: totals.calls };
   counts.sales = { successes: totals.mobileLines, total: totals.calls };
@@ -142,16 +156,23 @@ export function metricsFromGroups(groups, totals, goals = DEFAULT_GOALS) {
     if (!outcome) continue;
     for (const service of outcome.added) count(service, true, group.count);
     if (group.washed) continue;
+    count('subscriber',outcome.saved,group.count);
+    if (outcome.before.length === 1 && outcome.before[0] === 'internet') count('spInternet',outcome.saved,group.count);
+    if (outcome.before.length === 3 && outcome.kind !== 'downgrade') count('exactTp',outcome.saved,group.count);
+    if (group.lineStart !== undefined) {
+      counts.lineSave.total += group.count * group.lineStart;
+      counts.lineSave.successes += group.count * Math.min(group.lineStart,group.lineEnd);
+    }
     for (const service of outcome.kept) count(service, true, group.count);
     for (const service of outcome.disconnected) count(service, false, group.count);
     if (outcome.kind === 'downgrade') continue;
     count(PLAY_NAMES[outcome.tier].toLowerCase(), outcome.saved, group.count);
     if (outcome.tier >= 2) count('bundle', outcome.saved, group.count);
   }
-  return METRICS.map(metric => {
+  return allMetrics.map(metric => {
     const { successes, total } = counts[metric.key];
     const rate = total ? successes / total * 100 : null;
-    const opportunityUnit = ['overall', 'sales', 'orders'].includes(metric.key) ? 'call' : 'account';
+    const opportunityUnit = ['overall', 'sales', 'orders'].includes(metric.key) ? 'call' : metric.key === 'lineSave' ? 'line' : 'account';
     const result = { ...metric, successes, total, opportunityUnit, rate };
     const candidate = goals?.[metric.key];
     // A team can have measurable results without one shared target.

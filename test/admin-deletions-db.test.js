@@ -22,6 +22,7 @@ const deleteAccount = (snapshot, members=[], actor=admin) =>
 const deleteTeam = (owner, members=[], actor=admin) => rpc('workspace_admin_delete_team',actor,owner.id,
   owner.ownedTeamId,owner.ownedTeamName,'{' + members.join(',') + '}');
 const createTeam = async (supervisor,name,ids=[]) => {
+  await rpc('workspace_game_access',admin,supervisor,'bingo',true);
   await rpc('workspace_admin_save_team',admin,supervisor,name,null);
   if (ids.length) await rpc('workspace_admin_add_team_members',admin,supervisor,
     JSON.stringify(ids.map(id => ({id,expectedSupervisorId:null}))));

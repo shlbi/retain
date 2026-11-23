@@ -14,7 +14,7 @@ const serviceFields = (name, selected, index) => '<fieldset><legend>' + name + '
 export function outcomeEditor(group,index) {
   return '<section class="history-edit-group" data-edit-group="' + index + '"><strong>Outcome group ' + (index + 1) + '</strong>' +
       serviceFields('Starting services',group.before,index) + serviceFields('Kept',group.kept,index) +
-      serviceFields('Added',group.added,index) + '<label>Accounts ' + numberInput('count-' + index,group.count) +
+      serviceFields('Added',group.added,index) + ['lineStart','lineEnd'].map((k,j) => '<label>'+['Starting mobile lines','Ending mobile lines'][j]+'<input type="number" min="'+(j?0:1)+'" max="999" name="'+k+index+'" value="'+(group[k] ?? '')+'" placeholder="Unknown"></label>').join('') + '<label>Accounts ' + numberInput('count-' + index,group.count) +
       '</label><label><input type="checkbox" name="washed-' + index + '"' + (group.washed ? ' checked' : '') +
       '> Wash</label><small>Set accounts to 0 to remove this outcome group.</small></section>';
 }
@@ -39,6 +39,9 @@ export function readHistoryEditor(form, day) {
     if (!count) continue;
     const services = name => Array.from(section.querySelectorAll('[data-services="' + name + '"]:checked'), input => input.value);
     const group = {before:services('Starting services'),kept:services('Kept'),added:services('Added'),washed:data.has('washed-' + index)};
+    if (data.get('lineStart'+index) || data.get('lineEnd'+index)) {
+      group.lineStart = Number(data.get('lineStart'+index)); group.lineEnd = Number(data.get('lineEnd'+index));
+    }
     const key = JSON.stringify(group);
     if (groups.has(key)) groups.get(key).count += count;
     else groups.set(key,{...group,count});

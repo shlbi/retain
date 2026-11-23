@@ -12,7 +12,7 @@ function legacyCall(overrides={}) { const result=call({sold:true,soldLines:4,...
 
 test('version 3 round trip preserves leading zeros and the separate order sizes',()=>{
   const result=parseBackup(JSON.stringify(backup()));
-  assert.equal(result.version,3);assert.equal(result.calls[0].account,'0000012345');assert.deepEqual(result.calls[0].mobileOrders,[2,3]);assert.equal(result.calls[0].soldLines,5);assert.equal(Object.keys(result.goals).length,11);
+  assert.equal(result.version,3);assert.equal(result.calls[0].account,'0000012345');assert.deepEqual(result.calls[0].mobileOrders,[2,3]);assert.equal(result.calls[0].soldLines,5);assert.equal(Object.keys(result.goals).length,Object.keys(DEFAULT_GOALS).length);
 });
 test('optional missing or whitespace-only UCID and account normalize to empty strings',()=>{
   const input=call({ucid:'   ',account:'   '});const result=validateCall(input);

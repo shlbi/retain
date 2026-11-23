@@ -3,10 +3,12 @@ import { DEFAULT_GOALS } from '../dist/model.js';
 import { StorageError } from '../dist/validation.js';
 import { validateDayTotals, validateTallyState, validateTallyUpdate, validateTeamReport } from '../dist/tally-validation.js';
 import { credentials, existingUsername, hashPassword, needsPasswordUpgrade, verifyPassword, tokenHash, newPasswordChangeCode, newSession, sessionToken, sessionCookie, SESSION_SECONDS } from './auth.js';
+import { playMove, projectGame } from './arcade-engine.js';
+import { gameById, validateConfig } from '../dist/arcade-catalog.js';
 import { gameConnection } from './game-connection.js';
 import { ApiError, createDatabase, invalidReset } from './database.js';
 
-const ACTION_FIELDS = {signup:['username','password','requestedRole'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value'],editDay:['expected','replacement'],
+const ACTION_FIELDS = { arcadeAccess:['supervisorId','kind','enabled'], arcadeLaunch:['supervisorId','kind','rules','game'], arcadeMove:['id','revision','choice'], signup:['username','password','requestedRole'],login:['username','password'],logout:[],tally:['day','delta','requestId'],goal:['key','value'],editDay:['expected','replacement'],
   correctCall:['source','destinationDay','destination','original','revised','requestId'],
   adminCreateAccount:['username','password','role','supervisorId'],adminReviewSignup:['requestId','decision','role','supervisorId'],
   adminAssignAccount:['accountId','role','supervisorId','expectedRole','expectedSupervisorId'],
@@ -16,7 +18,7 @@ const ACTION_FIELDS = {signup:['username','password','requestedRole'],login:['us
   adminDeleteAccount:['accountId','expectedUsername','expectedRole','expectedSupervisorId','expectedTeamId','expectedTeamName','expectedMemberIds'],
   requestPasswordChange:['username'],completePasswordChange:['username','code','password'],adminReviewPasswordChange:['requestId','decision'],
   agentState:['agentId'],teamGoals:['agentIds','goals'],gameSchedule:['title','incentive','startsAt','endsAt','pattern','squares']};
-const READ_ACTIONS = {
+const READ_ACTIONS = {gameLibrary:'workspace_game_library',arcadeState:'workspace_arcade_snapshot',
   state:'workspace_tally_state', teamContext:'workspace_team_context', teamReport:'workspace_team_report',
   adminStats:'workspace_admin_stats', adminPerformance:'workspace_admin_performance',
   adminAccounts:'workspace_admin_accounts', gameState:'workspace_game_state'
@@ -287,6 +289,7 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
       metricsDatabase = db;
       if (req.method === 'GET') {
         const data = await db.rpc(READ_ACTIONS[action],{p_user_id:user.id});
+        if (action === 'arcadeState') return send(200,gameConnection(projectGame(data,user.id),env));
         if (action === 'gameState') return send(200,gameConnection(data,env));
         if (action === 'adminAccounts') return send(200,accountDirectory(data));
         if (action === 'teamReport') return send(200,safeResult(data,validateTeamReport));
@@ -440,6 +443,25 @@ export function createHandler({env = process.env, database, fetchImpl = globalTh
           }
           result = await db.rpc('workspace_team_goals',{p_user_id:user.id,p_agent_ids:agentIds,p_goals:goals});
           break;
+        }
+        case 'arcadeAccess': {
+          if (!isUuid(body.supervisorId) || !Object.hasOwn(gameById,body.kind) || typeof body.enabled!=='boolean') throw VALIDATION('Choose a supervisor and a game.');
+          result=await db.rpc('workspace_game_access',{p_user_id:user.id,p_supervisor:body.supervisorId,p_kind:body.kind,p_enabled:body.enabled}); break;
+        }
+        case 'arcadeLaunch': {
+          let rules;try { rules=validateConfig(body.kind,body.rules); } catch(e) { throw VALIDATION(e.message); }
+          if(!isUuid(body.supervisorId) || !body.game || typeof body.game!=='object') throw VALIDATION('Choose a team and schedule.');
+          result=await db.rpc('workspace_arcade_launch',{p_user_id:user.id,p_supervisor:body.supervisorId,p_kind:body.kind,p_rules:rules,p_game:body.game}); break;
+        }
+        case 'arcadeMove': {
+          if(!isUuid(body.id) || !Number.isSafeInteger(body.revision) || typeof body.choice!=='string' || body.choice.length>64) throw VALIDATION('Choose a game action.');
+          const raw=await db.rpc('workspace_arcade_snapshot',{p_user_id:user.id});
+          if(raw?.game?.id!==body.id || raw.revision!==body.revision) throw new ApiError(409,'CONFLICT','The board changed. Check the updated board and choose again.');
+          const world=playMove(raw,user.id,body.choice);
+          if(!world) throw VALIDATION('That move is unavailable.');
+          const applied=await db.rpc('workspace_arcade_move',{p_user_id:user.id,p_id:body.id,p_revision:body.revision,p_world:world});
+          if(!applied) throw new ApiError(409,'CONFLICT','The board changed. Check the updated board and choose again.');
+          result={ok:true};break;
         }
         case 'gameSchedule': {
           const {action:unused,...game} = body;

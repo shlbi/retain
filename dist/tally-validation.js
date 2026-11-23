@@ -23,12 +23,16 @@ function serviceList(value) {
 }
 
 function validateGroup(value) {
-  exactFields(value, groupFields);
+  const known = Object.hasOwn(value ?? {},'lineStart');
+  exactFields(value, known ? [...groupFields,'lineStart','lineEnd'] : groupFields);
+  if (known && (!Number.isInteger(value.lineStart) || value.lineStart < 1 || value.lineStart > 999 ||
+      !Number.isInteger(value.lineEnd) || value.lineEnd < 0 || value.lineEnd > 999)) invalid();
   const before = serviceList(value.before), kept = serviceList(value.kept), added = serviceList(value.added);
   if (!before.length || kept.some(key => !before.includes(key)) || added.some(key => before.includes(key)) ||
       typeof value.washed !== 'boolean' || (value.washed && kept.length && kept.length !== before.length) ||
       !Number.isSafeInteger(value.count) || value.count < 1) invalid();
-  return {before, kept, added, washed:value.washed, count:value.count};
+  if (known && (!before.includes('mobile') || kept.includes('mobile') !== (value.lineEnd > 0))) invalid();
+  return {before, kept, added, ...(known ? {lineStart:value.lineStart,lineEnd:value.lineEnd} : {}), washed:value.washed, count:value.count};
 }
 
 function checkedTotals(value, keys) {
@@ -42,7 +46,7 @@ function checkedTotals(value, keys) {
   const seen = new Set(), washBalance = new Map();
   let accounts = 0;
   for (const group of groups) {
-    const signature = JSON.stringify([group.before,group.kept,group.added,group.washed]);
+    const signature = JSON.stringify([group.before,group.kept,group.added,group.washed,group.lineStart,group.lineEnd]);
     if (seen.has(signature)) invalid();
     seen.add(signature);
     accounts += group.count;
@@ -82,10 +86,18 @@ function validateReportDays(value) {
   return days;
 }
 
+// During a rolling release, a report can still carry the earlier goal set.
+function expandedGoals(input) {
+  const goals={...input};
+  for(const [key,base] of Object.entries({lineSave:'mobile',subscriber:'overall',exactTp:'tp',spInternet:'internet'})) {
+    if(!Object.hasOwn(goals,key) && Object.hasOwn(goals,base))goals[key]=goals[base];
+  }
+  exactFields(goals,Object.keys(DEFAULT_GOALS));
+  return goals;
+}
 export function validateTallyState(value) {
   exactFields(value,['version','days','goals']);
-  exactFields(value.goals,Object.keys(DEFAULT_GOALS));
-  return {version:4,days:validateReportDays(value),goals:validateGoals(value.goals)};
+  return {version:4,days:validateReportDays(value),goals:validateGoals(expandedGoals(value.goals))};
 }
 
 /** A team goal is present only when every current member shares that percentage. */
@@ -94,9 +106,9 @@ export function validateTeamReport(value) {
   const days = validateReportDays(value);
   const {memberCount} = value;
   if (!Number.isSafeInteger(memberCount) || memberCount < 0 || (!memberCount && days.length)) invalid();
-  exactFields(value.goals,Object.keys(DEFAULT_GOALS));
+  const complete=expandedGoals(value.goals);
   const goals = {};
-  for (const [key,goal] of Object.entries(value.goals)) {
+  for (const [key,goal] of Object.entries(complete)) {
     if ((!memberCount && goal !== null) || (memberCount === 1 && goal === null)) invalid();
     goals[key] = goal === null ? null : validateGoalPercentage(key,goal);
   }

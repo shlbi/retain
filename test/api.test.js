@@ -258,10 +258,10 @@ test('database-backed rate limit stops hashing/account lookups and returns retry
   assert.doesNotMatch(db.calls[0].args.p_key,/127\.0\.0\.1|Agent/);
 });
 
-test('state returns eleven validated goals and logout revokes the token digest',async()=>{
+test('state returns validated goals and logout revokes the token digest',async()=>{
   const db=fakeDatabase(),handler=createHandler({env:ENV,database:db}),cookie=session();
   const state=await request(handler,{method:'GET',url:'/api/workspace?action=state',cookie});
-  assert.equal(state.status,200);assert.equal(state.body.version,4);assert.equal(Object.keys(state.body.goals).length,11);
+  assert.equal(state.status,200);assert.equal(state.body.version,4);assert.equal(Object.keys(state.body.goals).length,Object.keys(DEFAULT_GOALS).length);
   const response=await request(handler,{body:{action:'logout'},cookie,expected:'stale'});
   assert.deepEqual(response.body,{ok:true});assert.match(response.headers['set-cookie'],/Max-Age=0/);
   assert.match(db.calls.find(call=>call.name==='auth_logout').args.p_token_hash,/^[a-f0-9]{64}$/);

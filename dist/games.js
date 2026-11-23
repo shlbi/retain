@@ -1,16 +1,14 @@
+import {gameById} from './arcade-catalog.js';
+import {createGameLibrary,gameCover,sceneView,playMix} from './arcade-ui.js';
 import { createGameUpdates } from './games-realtime.js';
 
 // Team game scores come from confirmed server tallies. The drawer always reads the signed-in
 // player's game, including while a supervisor is viewing someone else's call log.
 const metrics = {
   calls: 'Calls logged', savedCalls: 'Calls saved', internet: 'Internet saves', tv: 'Video saves',
-  phone: 'Voice saves', mobile: 'Mobile saves', sp: 'Single-play saves', dp: 'Double-play saves',
+  phone: 'Voice saves', mobile: 'Mobile service saves', lineSave:'Mobile lines retained',spInternet:'Internet-only saves',subscriber:'Subscriber accounts saved', sp: 'Single-play saves', dp: 'Double-play saves',
   tp: 'Triple-play saves', mobileOrders: 'Mobile orders', mobileLines: 'Mobiles sold'
 };
-const defaultSquares = [
-  ['savedCalls', 3], ['internet', 2], ['mobileOrders', 1], ['sp', 1], ['tv', 1],
-  ['mobileLines', 2], ['dp', 1], ['phone', 1], ['calls', 8]
-];
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 })[c]);
@@ -22,7 +20,6 @@ const iconPaths = {
 };
 const icon = key => '<svg aria-hidden="true" viewBox="0 0 24 24">' + iconPaths[key] + '</svg>';
 const displayTime = new Intl.DateTimeFormat(undefined, {dateStyle:'medium', timeStyle:'short'});
-const localTime = date => new Date(date.getTime() - date.getTimezoneOffset()*60000).toISOString().slice(0,16);
 const dateText = value => escape(displayTime.format(new Date(value)));
 const patternLabel = pattern => pattern === 'blackout' ? 'Cover all nine squares' : 'Three in a row, column or diagonal';
 const phaseNames = {live:'Live', scheduled:'Scheduled', finished:'Finished'};
@@ -53,10 +50,11 @@ function standings(data, supervisor) {
 
 function gameView(data, supervisor, canSchedule) {
   const {game,me} = data;
+  if (data.scene) return sceneView(data,supervisor);
   if (!game) return '<section class="games-empty">' + icon('bingo') + '<h3>No game scheduled</h3><p>' +
-    (supervisor ? canSchedule ? 'Set up a bingo game for your team.' : 'Ask an admin to create your team before scheduling a game.'
+    (supervisor ? canSchedule ? 'Open the game library to schedule a team round.' : 'Your admin can enable games for your team.'
       : 'Your team’s next game will appear here.') + '</p></section>';
-  return '<article class="games-current"><div class="games-phase ' + escape(game.status) + '">' + escape(phaseNames[game.status]) +
+  return '<article class="games-current bingo-stage">'+gameCover(gameById.bingo)+'<div class="games-phase ' + escape(game.status) + '">' + escape(phaseNames[game.status]) +
     '</div><h3>' + escape(game.title) + '</h3><p class="games-time">' + dateText(game.startsAt) + ' – ' + dateText(game.endsAt) + '</p>' +
     '<dl class="games-facts"><div><dt>Incentive</dt><dd>' + escape(game.incentive || 'No incentive set') + '</dd></div><div><dt>To win</dt><dd>' +
     escape(patternLabel(game.pattern)) + '</dd></div></dl>' +
@@ -66,40 +64,6 @@ function gameView(data, supervisor, canSchedule) {
     '<div class="games-section-heading"><h4>' + (supervisor ? 'Team standings' : 'Leaderboard') + '</h4>' +
     (me ? '<span>Your rank · #' + escape(me.rank) + '</span>' : '') + '</div>' + standings(data,supervisor) +
     '<p class="games-muted">Winners rank first, followed by completed squares. Tied players share a rank.</p></article>';
-}
-
-function scheduleForm() {
-  const start = new Date(Math.ceil((Date.now()+60000)/60000)*60000);
-  const end = new Date(start.getTime()+60*60000);
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return '<form id="game-schedule-form" class="games-form"><div class="games-section-heading"><h3>Schedule a game</h3></div>' +
-    '<label>Game<select name="type"><option value="bingo">Bingo</option></select></label>' +
-    '<label>Game name<input required name="title" value="Team bingo" maxlength="80"></label>' +
-    '<label>Incentive<input name="incentive" placeholder="e.g. First choice of break" maxlength="240"></label>' +
-    '<div class="games-dates"><label>Starts<input type="datetime-local" required name="startsAt" value="' + localTime(start) + '"></label>' +
-    '<label>Ends<input type="datetime-local" required name="endsAt" value="' + localTime(end) + '"></label></div>' +
-    '<small>Times shown in ' + escape(zone) + '.</small>' +
-    '<label>Winning pattern<select name="pattern"><option value="line">Three in a row, column or diagonal</option>' +
-    '<option value="blackout">All nine squares</option></select></label><fieldset class="game-blocks"><legend>Bingo squares</legend>' +
-    '<p>Choose the result and how many an agent needs for each square.</p><div class="game-block-grid">' +
-    defaultSquares.map(([key,target],i) => '<div class="game-block"><span>Square ' + (i+1) + '</span><select aria-label="Square ' +
-      (i+1) + ' result" name="metric-' + i + '">' + Object.entries(metrics).map(([k,label]) => '<option value="' + k + '"' +
-      (k===key ? ' selected' : '') + '>' + label + '</option>').join('') + '</select><label>Target<input type="number" required min="1" step="1" max="9999" name="target-' +
-      i + '" value="' + target + '"></label></div>').join('') +
-    '</div></fieldset><p class="game-error" data-schedule-error role="alert" hidden></p><div class="games-actions">' +
-    '<button type="button" data-game-cancel class="button secondary">Cancel</button><button type="submit" class="button primary">Schedule bingo</button></div></form>';
-}
-
-function readSchedule(form) {
-  const fields = new FormData(form);
-  const title = fields.get('title').trim(), incentive = fields.get('incentive').trim();
-  if (!title) throw new Error('Enter a game name.');
-  const start = new Date(fields.get('startsAt')), end = new Date(fields.get('endsAt'));
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
-    throw new Error('Choose an end time after the start time.');
-  }
-  return {title, incentive, startsAt:start.toISOString(), endsAt:end.toISOString(), pattern:fields.get('pattern'),
-    squares:defaultSquares.map((_,i) => ({metric:fields.get('metric-'+i),target:Number(fields.get('target-'+i))}))};
 }
 
 export function createGames({apiRequest,onOpen}) {
@@ -123,8 +87,25 @@ export function createGames({apiRequest,onOpen}) {
   const gameButton = $('.game-open'), shell = $('.app-shell');
   let opener = gameButton;
   let user = null, role = null, session = 0, timer, pending = null, data = null, menuOpen, viewKey, loadError = '';
-  let needsRefresh = false, scheduling = false, teamName, supervisorId;
+  let needsRefresh = false, teamName, supervisorId;
   const updates = createGameUpdates(refresh);
+  const library=createGameLibrary({root:setup,request:apiRequest,actor:()=>user?.id,back:closeSetup,launched:()=>{closeSetup();refresh();}});
+  const celebration=document.createElement('section');
+  celebration.className='arc-win';celebration.setAttribute('role','status');celebration.hidden=true;
+  workspace.append(celebration);
+  let celebrationTimer,seenGame=null,seenWins=new Set(),moving=false;
+  function celebrate(fresh) {
+    if(!fresh?.game)return;
+    const id=fresh.game.id;
+    const first=seenGame!==id;
+    if(first){seenWins=new Set();seenGame=id;}
+    const next=(fresh.winners??[]).filter(n=>!seenWins.has(n));
+    next.forEach(n=>seenWins.add(n));
+    if(!next.length || (first && fresh.game.status==='finished'))return;
+    celebration.innerHTML='<div class="arc-confetti" aria-hidden="true">'+Array.from({length:18},(_,i)=>'<i style="--i:'+i+'"></i>').join('')+'</div><div><small>'+escape(fresh.game.title)+'</small><strong>'+ (fresh.game.kind==='bingo'?'Bingo!':'Victory!')+'</strong><span>'+escape(next.join(', '))+'</span></div><button aria-label="Dismiss celebration">×</button>';
+    celebration.hidden=false;celebration.querySelector('button').onclick=()=>{celebration.hidden=true;};
+    clearTimeout(celebrationTimer);celebrationTimer=setTimeout(()=>{celebration.hidden=true;},6500);
+  }
 
   function toggleMenu(open) {
     menuOpen = open;
@@ -160,20 +141,24 @@ export function createGames({apiRequest,onOpen}) {
     if (!dock.hidden) {
       const top = data.leaders.slice(0,3).map(member =>
         '<span><b>#' + escape(member.rank) + '</b> ' + escape(member.username) + '</span>').join('');
-      widget.innerHTML = '<strong>' + icon('bingo') + ' Bingo</strong>' + (top || '<span>No players yet</span>') +
+      widget.innerHTML = '<strong>' + icon('bingo') + ' '+escape(gameById[game.kind]?.name??'Bingo')+'</strong>' + (top || '<span>No players yet</span>') +
         (data.me ? '<strong class="widget-own">You #' + escape(data.me.rank) + '</strong>' : '') +
         (loadError ? '<span>Offline</span>' : '');
     }
     if (panel.hidden) return;
-    if (role === 'supervisor' && teamName !== null && !controls.children.length) {
-      controls.innerHTML = '<button type="button" class="button secondary" data-game-new>Schedule a game</button>';
+    const canSetup=role==='supervisor' && teamName!=null && data?.hasLibrary;
+    if (!canSetup && data && (controls.children.length || setup.children.length)) {
+      library.clear();controls.replaceChildren();view.hidden=false;controls.hidden=false;viewKey=undefined;
+    }
+    if (canSetup && !controls.children.length) {
+      controls.innerHTML = '<button type="button" class="button secondary" data-game-new>Game library</button>';
     }
     if (!setup.children.length) {
       const currentKey = JSON.stringify(data);
       if (currentKey !== viewKey) {
         const openPlayers = new Set([...view.querySelectorAll('details[open]')].map(el => el.dataset.player));
         const activePlayer = document.activeElement?.closest('details')?.dataset.player;
-        view.innerHTML = data ? gameView(data,role==='supervisor',teamName!==null) : '<p class="games-muted">Loading game…</p>';
+        view.innerHTML = data ? gameView(data,role==='supervisor',Boolean(canSetup)) : '<p class="games-muted">Loading game…</p>';
         for (const details of view.querySelectorAll('details[data-player]')) {
           details.open = openPlayers.has(details.dataset.player);
           if (activePlayer === details.dataset.player) details.querySelector('summary').focus({preventScroll:true});
@@ -197,9 +182,9 @@ export function createGames({apiRequest,onOpen}) {
     const epoch = session;
     pending = (async()=>{
       try {
-        const fresh = await apiRequest('gameState',undefined,user.id);
+        const fresh = await apiRequest('arcadeState',undefined,user.id);
         if (epoch !== session) return;
-        data = fresh; loadError = '';
+        data = fresh; loadError = ''; celebrate(fresh);
         if (!document.hidden) updates.sync(fresh.realtime);
       } catch (error) {
         if (epoch !== session) return;
@@ -252,36 +237,16 @@ export function createGames({apiRequest,onOpen}) {
   panel.addEventListener('click',event => {
     if (event.target.closest('[data-game-new]') && role === 'supervisor') {
       $('.game-scheduled').hidden = true;
-      setup.innerHTML = scheduleForm(); view.hidden = true; controls.hidden = true;
-      setup.querySelector('[name="title"]').focus();
-    }
-    if (event.target.closest('[data-game-cancel]') && !scheduling) {
-      closeSetup(); controls.querySelector('button')?.focus();
+      view.hidden = true; controls.hidden = true; library.open();
     }
   });
-  panel.addEventListener('submit',async event => {
-    event.preventDefault();
-    if (scheduling || role !== 'supervisor' || !user) return;
-    const form = event.target, errorBox = form.querySelector('[data-schedule-error]');
-    const epoch = session;
-    try {
-      const config = readSchedule(form);
-      scheduling=true; form.querySelector('[type="submit"]').disabled=true; errorBox.hidden=true;
-      await apiRequest('gameSchedule',config,user.id);
-      if (epoch !== session) return;
-      closeSetup();
-      const confirmation = $('.game-scheduled');
-      confirmation.textContent = config.title + ' scheduled for ' + displayTime.format(new Date(config.startsAt)) + '.';
-      confirmation.hidden = false;
-      await refresh();
-    } catch (error) {
-      if (epoch === session) {
-        errorBox.hidden=false; errorBox.textContent=error.message || 'Could not schedule the game.';
-      }
-    } finally {
-      if (epoch === session) scheduling=false;
-      form.querySelector('[type="submit"]').disabled=false;
-    }
+  view.addEventListener('click',async event=>{
+    if(event.target.closest('[data-listen]') && data?.scene?.track){playMix(data.scene.track,data.game.rules.mode==='Daybreak');return;}
+    const button=event.target.closest('[data-arc-move]');if(!button||moving||!data?.game)return;
+    const epoch=session;moving=true;button.disabled=true;
+    try{await apiRequest('arcadeMove',{id:data.game.id,revision:data.revision,choice:button.dataset.arcMove},user.id);}
+    catch(e){if(epoch===session){const notice=$('.game-scheduled');notice.hidden=false;notice.textContent=e.message;}}
+    finally {if(epoch===session){moving=false;button.disabled=false;await refresh();}}
   });
   document.addEventListener('visibilitychange',()=> {
     clearTimeout(timer);
@@ -289,7 +254,8 @@ export function createGames({apiRequest,onOpen}) {
     else refresh();
   });
   function closeSession() {
-    session++; user=null; role=null; data=null; pending=null; needsRefresh=false; scheduling=false; loadError='';
+    library.clear();seenWins.clear();seenGame=null;moving=false;clearTimeout(celebrationTimer);celebration.hidden=true;
+    session++; user=null; role=null; data=null; pending=null; needsRefresh=false; loadError='';
     clearTimeout(timer); updates.close();
     teamName = supervisorId = undefined;
     $('.game-team-name').textContent = ''; $('.game-team-name').hidden = true;

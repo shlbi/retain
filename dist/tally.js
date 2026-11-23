@@ -5,11 +5,11 @@ const zeroTotals = {
 };
 
 // The validated service lists use the same order in the browser and database.
-function accumulateGroup(groups, {before, kept, added, washed}, count) {
-  const key = JSON.stringify([before, kept, added, washed]);
+function accumulateGroup(groups, {before, kept, added, washed, lineStart, lineEnd}, count) {
+  const key = JSON.stringify([before, kept, added, washed,lineStart,lineEnd]);
   const found = groups.get(key);
   if (found) found.count += count;
-  else groups.set(key, {before, kept, added, washed, count});
+  else groups.set(key, {before, kept, added, washed, ...(lineStart !== undefined ? {lineStart,lineEnd} : {}), count});
 }
 
 function sortedGroups(groups) {

@@ -6,25 +6,27 @@ A responsive tracker for call outcomes, mobile sales and daily goals. Sign in wi
 
 Select the original services, mark the services kept, and select any additions. Use **Add another account** for each additional account handled during the call. Enter mobile orders on the account that placed them. Entry uses fixed choices. UCIDs, customer account numbers, callback reminders and free-text notes have been retired.
 
-| Account outcome | History tag | Rates affected |
-| --- | --- | --- |
-| Single service kept or disconnected | SPS or SPD | That service and single-play |
-| All original services kept or all disconnected on a double account | DPS or DPD | Each original service, double-play, and bundle |
-| All original services kept or all disconnected on a triple account | TPS or TPD | Each original service, triple-play, and bundle |
-| Some original services kept on a bundle | DP → SP, TP → DP, or TP → SP | Each original service counts as kept or lost. All play and bundle rates exclude the downgrade. |
-| New service added | Service added | One success and one opportunity for that service |
+The dashboard and supervisor goal builder use these eleven rates in the same order. The team overview divides pooled successes by pooled opportunities.
 
-For example, a customer starts with Internet, Video and Voice. Keeping Video and Voice and disconnecting Internet gives **TP → DP**. Video and Voice each earn a save. Internet records one opportunity and zero saves. This call counts once in overall save rate because the customer kept an original service.
+| Dashboard ring | Numerator divided by denominator |
+| --- | --- |
+| Internet save rate | Internet kept or added ÷ eligible internet opportunities |
+| SPS | Full saves ÷ full saves and full disconnects on single-service accounts |
+| Video save rate | Video kept or added ÷ eligible video opportunities |
+| Mobile line save rate | Sum of the smaller of starting and ending lines per eligible account ÷ total starting lines on those accounts |
+| Mobile line yield | New mobile lines sold ÷ all calls |
+| Mobile order yield | Mobile orders placed ÷ all calls |
+| Voice save rate | Voice kept or added ÷ eligible voice opportunities |
+| DPS | Full saves ÷ full saves and full disconnects on two-service accounts |
+| TPS | Full saves ÷ full saves and full disconnects on exactly three-service accounts |
+| SP Internet | Internet-only starting accounts that kept internet ÷ eligible internet-only starting accounts |
+| Subscriber save rate | Accounts keeping at least one original service ÷ eligible accounts |
 
-Triple-play includes accounts starting with three or four services. A four-to-three downgrade is labeled **TP (4 → 3)**. Added services earn service credit independently of how the original services turned out.
+Selecting Mobile as a starting service opens **Started with** and **Ended with**. Changing the starting balance copies it to the ending balance until the agent edits the ending value. For three lines at the start and three at the end, all three count as saved even if one was replaced. An account starting with three and ending with five receives 3/3. Log sales separately in **Mobile orders**. One three-line order across ten calls gives 30% line yield and 10% order yield. Each order supports 1–12 lines.
 
-A **wash** pairs two accounts on the same call that started with exactly the same services when one kept every original service and the other disconnected every original service. Each account can participate in one pair. Paired original outcomes are excluded from service, play, bundle, and overall results. Added services and mobile sales still earn credit. Other accounts on the same call score normally. Overall save rate counts one opportunity per call with an unpaired account and one success if any such account kept an original service.
+Reports exclude matched wash pairs from original-service, play and subscriber opportunities. A full save and a full disconnect on two accounts with the same starting services form a wash. Downgrades count for individual services and subscriber retention. A three-to-two downgrade appears as **TP → DP**. A four-to-three downgrade appears as **4 services → TP**. Added services can earn service credit. Historical groups without recorded mobile balances contribute to the other applicable rates and are left out of line retention.
 
-### Mobile orders and mobiles sold
-
-Each mobile order contains **1–12 mobiles**. A call can contain multiple orders. Across ten calls, one order for three mobiles gives a **10% order rate** and a **30% line rate**. Every call contributes once to each sales denominator, including calls with several customer accounts or a wash. Use **Mobile orders** on the selected account. If that account started without Mobile, its first order earns one mobile service save. Orders on an account that started with Mobile count toward sales, and its kept or disconnected choice determines mobile retention credit.
-
-Daily reports use Eastern time. Each ring shows progress against the goal assigned by the supervisor.
+Daily reports use Eastern time. The supervisor sets the team's targets.
 
 ### Grouped history
 
@@ -69,8 +71,8 @@ The [database schema guide](docs/SCHEMA.md) explains how accounts, memberships, 
 | Role | Workspace |
 | --- | --- |
 | Agent | Log calls, correct personal history, view assigned goals and play the assigned team's game. |
-| Supervisor | Select a name in **Agents**, the expandable list below **Goals**, to view that person's percentages and call log. The list starts open and stays open when switching agents. In **Goals**, apply a target to the whole roster or selected agents. In **Games**, schedule team bingo and see player progress. |
-| Admin | Use the personal agent workspace and play on an assigned team. Open **Admin** to see performance charts, review sign-ups, create accounts, assign roles and manage named teams. |
+| Supervisor | Select a name in **Agents**, the expandable list below **Goals**, to view that person's percentages and call log. The list starts open and stays open when switching agents. In **Goals**, apply a target to the whole roster or selected agents. In **Games → Game library**, customize and schedule games enabled by an admin. |
+| Admin | Use the personal agent workspace and play on an assigned team. Open **Admin** to see performance charts, review sign-ups, create accounts, assign roles, manage named teams and control the game library. |
 
 Supervisors can click the **team name** at the top of the sidebar to switch both **Overview** and **Call log** to the whole team. Select a name under **Agents** to return to that person. If two agents save 1 of 1 and 2 of 9 eligible calls, the team saves 3 of 10 (30%). The rings show a shared goal when everyone has the same target for that metric. The team call log combines identical outcomes for the same date and supports the date filters and CSV export.
 
@@ -96,7 +98,22 @@ Only admins can delete teams or accounts. Open **Edit** beside the team or perso
 
 Admin accounts are protected from deletion. Confirmed deletions have no in-app undo.
 
-### Team bingo
+### Game library
+
+Open **Admin → Games**, choose an illustrated game card, then check the supervisors who can schedule it. Access is independent for each game and supervisor. An admin can also schedule a round directly for a named team. New launches require an explicit grant for supervisors, including Bingo. Removing access prevents future launches. Scheduled rounds continue for their participants.
+
+Supervisors open **Games → Game library**. Each game page has round setup (local scheduling time, round name, incentive, start and end) and a rules block with the settings used by that specific game. Agents see the active board and use the moves they have earned. The compact standings and winner announcement work even with the game drawer closed. Reduced-motion settings suppress celebratory animation.
+
+| Games | What players do |
+| --- | --- |
+| Bingo Hall, Vault Break, Last Domino | Complete a card, unlock three team locks, or build a chain and select its route. |
+| Crew Rally, The Belt, Ghost Shift | Race on balanced crew scores, challenge a champion over equal call quotas, or race a previous personal result. |
+| Mission Draft, Fantasy Shift, One More Floor | Commit to future contracts, draft a squad of outcomes, or risk a climb before banking it. |
+| Moon Heist, Switchboard, Queen City Takeover | Hide and scan lockers, rotate and bridge relays, or connect neighboring city blocks. |
+| After Hours FM, Swap Meet, Caption Clash | Mix and play a team track, exchange duplicate stamps, or enter and vote on captions. |
+| What on Earth?, Same Wavelength, Wrong Manual, Plot Twist | Identify a mystery object, read a teammate's dial, decode a partner's panel, or vote on a branching story. |
+
+### Bingo
 
 Open **Games** to see the current board. A supervisor sets the incentive, start and end in local time, and a metric and target for each of nine squares. Choose a line (horizontal, vertical or diagonal) or blackout (all nine). A team can schedule multiple games with nonoverlapping time windows. The first confirmed submission of a tally scores once when its Eastern report date matches today and the server receives it during the game. Historical corrections update reporting independently because grouped history does not identify the time of each call. A wash contributes calls and any eligible additions or sales under the existing scoring rules.
 

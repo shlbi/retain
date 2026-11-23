@@ -13,7 +13,8 @@ function toggle(list, key) {
 /** Orders belong to the selected account during entry. Only grouped outcomes and sale totals persist. */
 export function callFromEntry(draft) {
   return {
-    accounts: draft.accounts.map(({before, kept, added, mobileOrders}) => ({
+    accounts: draft.accounts.map(({before, kept, added, mobileOrders,lineStart,lineEnd}) => ({
+      ...(before.includes('mobile') && lineStart !== undefined ? {lineStart,lineEnd} : {}),
       before, kept, added: mobileOrders.length && !before.includes('mobile') ? [...added, 'mobile'] : added
     })),
     mobileOrders: draft.accounts.flatMap(account => account.mobileOrders)
@@ -53,7 +54,7 @@ export function createTallyEntry({submit, onClose, icon = () => ''}) {
 
   function lockControls() {
     const editable = !writing && !unavailable && !submission;
-    for (const control of form.querySelectorAll('select,button')) {
+    for (const control of form.querySelectorAll('select,button,input')) {
       control.disabled = control.type === 'submit' ? writing || unavailable : !editable || control.hasAttribute('data-limit');
     }
     field('submit-label').textContent = writing ? 'Saving…' : submission ? 'Retry save' : 'Save tally';
@@ -85,6 +86,10 @@ export function createTallyEntry({submit, onClose, icon = () => ''}) {
           <button type="button" data-end="${service.key}" data-kept="false" aria-label="Disconnect ${service.label}" aria-pressed="${!kept}">Disconnected</button>
         </div></div>`;
     }).join('') || '<p class="text-muted">Select the services the customer had.</p>';
+    const balances = field('line-balances');
+    balances.hidden = !account.before.includes('mobile');
+    field('line-start').value = account.lineStart ?? 1;
+    field('line-end').value = account.lineEnd ?? 1;
     const available = SERVICES.filter(service => service.key !== 'mobile' && !account.before.includes(service.key));
     field('added-services-section').hidden = !account.before.length || !available.length;
     field('added-count').textContent = account.added.length ? `(${account.added.length})` : '';
@@ -114,6 +119,19 @@ export function createTallyEntry({submit, onClose, icon = () => ''}) {
     selectAccount(0);
   }
 
+  field('line-balances').addEventListener('input', event => {
+    const input = event.target;
+    if (!input.validity.valid || !input.value) return;
+    const a = draft.accounts[selected];
+    if (input.id === 'line-start') {
+      if (!a.endEdited) field('line-end').value = a.lineEnd = input.valueAsNumber;
+      a.lineStart = input.valueAsNumber;
+    } else { a.lineEnd = input.valueAsNumber; a.endEdited = true; }
+    a.kept = a.kept.filter(k => k !== 'mobile');
+    if (a.lineEnd) a.kept.push('mobile');
+    for (const b of field('end-services').querySelectorAll('[data-end="mobile"]')) b.setAttribute('aria-pressed',String((b.dataset.kept === 'true') === (a.lineEnd > 0)));
+    field('outcome-preview').innerHTML = outcomePreview(callFromEntry(draft));
+  });
   accountSelect.addEventListener('change', () => selectAccount(accountSelect.selectedIndex));
   panel.addEventListener('click', event => {
     const button = event.target.closest('button');
@@ -127,6 +145,7 @@ export function createTallyEntry({submit, onClose, icon = () => ''}) {
     message();
     if (service) {
       account.before = toggle(account.before, service);
+      if (service === 'mobile') { account.lineStart = account.lineEnd = 1; account.endEdited = false; }
       if (account.before.includes(service)) account.kept.push(service);
       else account.kept = account.kept.filter(key => key !== service);
       account.added = account.added.filter(key => key !== service);
@@ -137,6 +156,7 @@ export function createTallyEntry({submit, onClose, icon = () => ''}) {
     } else if (end) {
       account.kept = account.kept.filter(key => key !== end);
       if (kept === 'true') account.kept.push(end);
+      if (end === 'mobile') { account.lineEnd = kept === 'true' ? account.lineStart : 0; account.endEdited = kept !== 'true'; }
       focusSelector = `[data-end="${end}"][data-kept="${kept}"]`;
     } else if (action === 'add-account' || action === 'remove-account') {
       if (action === 'add-account') {

@@ -105,3 +105,23 @@ test('the report RPC is service-only and requires an active supervisor with a na
     assert.equal(row.allowed,role==='service_role');
   }
 });
+
+test('line balances survive saves, retries, corrections and team reporting without inventing historical line counts',async()=>{
+  const mobile=(start,end)=>({before:['mobile'],kept:end?['mobile']:[],lineStart:start,lineEnd:end});
+  const delta=tallyForCall({accounts:[mobile(3,3),mobile(6,2)],mobileOrders:[1]});
+  const key=randomUUID(),write=()=>rpc('workspace_tally',agent,day,JSON.stringify(delta),key);
+  await write();await write();
+  await tally(agent,day,{before:['mobile'],kept:['mobile']});
+  await tally(adminMember,day,{accounts:[{before:['internet','tv','phone','mobile'],kept:['internet','tv','phone','mobile']},lost]});
+  const read=async()=>metricsForDay((await report(supervisor)).days[0]);
+  let rows=await read();
+  const value=k=>{const m=rows.find(x=>x.key===k);return [m.successes,m.total];};
+  assert.deepEqual(value('lineSave'),[5,9]);assert.deepEqual(value('subscriber'),[4,5]);assert.deepEqual(value('exactTp'),[0,0]);
+  assert.deepEqual(value('spInternet'),[0,1]);assert.deepEqual(value('sales'),[1,3]);assert.deepEqual(value('orders'),[1,3]);
+  const before=(await rpc('workspace_tally_state',agent)).days[0],after=structuredClone(before);
+  after.groups.find(g=>g.lineStart===6).lineEnd=4;
+  await rpc('workspace_edit_day',agent,JSON.stringify(before),JSON.stringify(after));
+  rows=await read();assert.deepEqual(value('lineSave'),[7,9]);
+  const invalid=structuredClone(delta);invalid.groups[0].lineEnd=-1;
+  await assert.rejects(rpc('workspace_tally',agent,day,JSON.stringify(invalid),randomUUID()),/VALIDATION/);
+});

@@ -67,6 +67,22 @@ The baseline inventory showed RLS enabled on all ten tables. The `anon`, `authen
 | `workspace_launch_game`, `workspace_game_state` | Schedule a game and return the appropriately scoped board and standings. |
 | `workspace_record_request` | Accumulate technical measurements for the date. |
 
+## Mobile line balances and game permissions
+
+The line-balances migration extends each fixed tally group with an optional pair of whole numbers, `lineStart` and `lineEnd`. The pair is valid on a starting mobile account. Zero ending lines means mobile disconnected. Missing balances identify an unmeasured group. Group keys, corrections, exports, and team reports distinguish different balances. Existing history stays intact. Goals retain their historical keys and add `lineSave`, `exactTp`, `spInternet`, and `subscriber`. Previously assigned mobile, triple-play, internet and overall targets initialize their corresponding new targets.
+
+The game library uses the existing team schedule, game scores and empty Realtime invalidation signals. The tables keep their original Bingo names to preserve existing games and foreign keys.
+
+| Object | Contents and access |
+| --- | --- |
+| `game_access` | One supervisor ID and game type per enabled game. Only an admin can change access using `workspace_game_access`. |
+| `bingo_games` | Adds game kind, validated rules, shared game state, revision and a private puzzle seed. |
+| `bingo_scores` | Adds a stable player seat and an optional finish snapshot for equal-call races. |
+| `workspace_game_library`, `workspace_arcade_launch` | Return role-specific setup options and check the admin or supervisor's launch rights. |
+| `workspace_arcade_snapshot`, `workspace_arcade_move` | The server reads the current team's board, projects each player's visible information and legal actions, then conditionally applies a move at the expected revision. |
+
+All new tables have row-level security and no direct client grants. Only the server role can execute the public game routines. Secrets and unrevealed moves stay in the server-side snapshot. The client sends a choice from the current board. Confirmed tallies advance live rounds once per retry token. Historical corrections update reports independently. Removing supervisor access leaves already scheduled team rounds playable.
+
 ## Legacy and migration history
 
 The production inventory found neither `workspace_private.calls` nor `workspace_private.call_versions`. Historic migrations and the [grouped cleanup script](../scripts/retain-grouped-cleanup.sql) mention them because older installations used individual call records. Those files describe prior database versions. Backups and earlier exports have separate lifecycles.

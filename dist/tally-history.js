@@ -37,7 +37,7 @@ export function groupedRows(days, filter = 'all') {
       groups.push({
         groupIndex, day: day.day, outcome: outcome.code, kind: outcome.kind, washed: group.washed,
         kept: serviceNames(outcome.kept), disconnected: serviceNames(outcome.disconnected),
-        added: serviceNames(outcome.added), count: group.count
+        added: serviceNames(outcome.added), ...(group.lineStart !== undefined ? {lineStart:group.lineStart,lineEnd:group.lineEnd} : {}), count: group.count
       });
     }
     // Sort by frequency, then tags, so the list never implies a call sequence.
@@ -70,6 +70,7 @@ function rowTags(row) {
       tags.push(`<span class="badge ${color}">${escapeHtml(service)} ${label}</span>`);
     }
   }
+  if (row.lineStart !== undefined) tags.push(`<span class="badge neutral">Mobile lines ${row.lineStart} → ${row.lineEnd}</span>`);
   return tags.join('');
 }
 
@@ -86,10 +87,10 @@ export function groupedTable(rows, {showDate = false, empty = 'No saved outcomes
 }
 
 export function groupedCsv(rows) {
-  const records = [['Date (Eastern)', 'Outcome', 'Wash', 'Services kept', 'Services disconnected', 'Services added', 'Accounts', 'Mobile orders', 'Mobile lines']];
+  const records = [['Date (Eastern)', 'Outcome', 'Wash', 'Services kept', 'Services disconnected', 'Services added', 'Accounts', 'Mobile orders', 'Mobile lines','Starting mobile lines','Ending mobile lines']];
   for (const row of rows) {
     records.push([row.day, row.outcome, row.kind === 'mobile' ? '' : row.washed ? 'Yes' : 'No',
-      row.kept?.join(', '), row.disconnected?.join(', '), row.added?.join(', '), row.count, row.orders, row.lines]);
+      row.kept?.join(', '), row.disconnected?.join(', '), row.added?.join(', '), row.count, row.orders, row.lines,row.lineStart,row.lineEnd]);
   }
   const quote = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
   return '\uFEFF' + records.map(record => record.map(quote).join(',')).join('\r\n');

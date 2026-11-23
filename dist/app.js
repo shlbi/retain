@@ -5,6 +5,7 @@ import { createTallyEntry } from './entry-tally.js';
 import { groupedRows, groupedTable, groupedCsv } from './tally-history.js';
 import { openStore, apiRequest, validDay } from './storage.js';
 import { historyEditor, readHistoryEditor, outcomeEditor } from './history-editor.js';
+import { createGameLibrary } from './arcade-ui.js';
 import { createGames } from './games.js';
 import { createTeamGoals, displayRoster } from './team.js';
 import { displayAdminStats } from './performance.js';
@@ -45,6 +46,7 @@ let selectedDay=dayKey(), previousDay=selectedDay, lastFocus=null, toastTimer;
 let sessionUser=null, authMode='login', authBusy=false, sessionEpoch=0, sessionRequest=0, authenticating=false;
 let pendingRead=null;
 let requestedView = location.hash.slice(1);
+const adminGames = createGameLibrary({root:document.getElementById('admin-games'),request:apiRequest,actor:()=>sessionUser?.id,admin:true});
 const games = createGames({apiRequest,onOpen:() => { if (view !== 'today') setView('today'); }});
 let teamContext = {role:'agent',agents:[]}, selectedAgentId = '', adminRequest = 0;
 let adminSection = 'performance';
@@ -137,8 +139,12 @@ async function submitTally(draft, token, day) {
 }
 
 /** Render today's dashboard and rates from committed records only. */
+function reportMetrics(day,goals) {
+  const rows = metricsForDay(day,goals);
+  return METRICS.map(metric => ({...rows.find(row => row.key === metric.key),label:metric.label}));
+}
 function renderDashboard(){
-  const day = currentDay(), metrics = metricsForDay(day, state.goals);
+  const day = currentDay(), metrics = reportMetrics(day, state.goals);
   const stats = [['calls',day?.calls,'Calls logged'],['leaf',day?.savedCalls,'Calls saved'],['mobile',day?.mobileOrders,'Mobile orders'],['sparkles',day?.mobileLines,'Mobiles sold']];
   $('summary-strip').innerHTML=stats.map(([name,n,label])=>`<div class="summary-item"><span class="summary-icon">${icon(name)}</span><div class="summary-content"><strong>${n ?? 0}</strong><span>${label}</span></div></div>`).join('');
   const circumference=2*Math.PI*56;
@@ -173,9 +179,10 @@ function clearAdminReport() {
   $('admin-report').replaceChildren();
 }
 function setAdminSection(section, load = true) {
+  if (adminSection === 'games' && section !== 'games') adminGames.clear();
   if (adminSection === 'accounts' && section !== 'accounts') accountManagement.leave();
   adminSection = section;
-  for (const name of ['accounts','performance','teams']) {
+  for (const name of ['accounts','performance','teams','games']) {
     $('admin-'+name).hidden = section !== name;
     const button = $('admin-open-'+name);
     if (name === section) button.setAttribute('aria-current','page');
@@ -183,6 +190,7 @@ function setAdminSection(section, load = true) {
   }
   if (load && view === 'admin' && adminActor()) {
     if (section === 'accounts') accountManagement.refresh();
+    else if (section === 'games') adminGames.open();
     else if (section === 'teams') namedTeams.refresh();
     else loadAdminStats();
   }
@@ -261,7 +269,7 @@ function setView(next,scroll=true) {
       team ? teamDescription : watchingTeam() ? (name ? 'Daily outcomes and progress toward assigned goals.' : 'No agents are assigned to your team yet.') : 'Every conversation counts. See how yours add up.'],
     calls: ['Call log',team ? teamName+' team call log' : watchingTeam() ? (name ? name+'’s call log' : 'Team call log') : 'Your call log.', team ? teamDescription : 'Daily counts by outcome and service.'],
     goals: ['Goals','Team goals','Set a performance target for everyone or choose individual agents.'],
-    admin: ['Admin','Admin',adminSection === 'accounts' ? 'Review requests and manage account access.' : adminSection === 'teams' ? 'Choose supervisors and manage their teams.' : 'See how agents use the tracker and how the app responds.']
+    admin: ['Admin','Admin',adminSection === 'games' ? 'Manage game access and schedule a team round.' : adminSection === 'accounts' ? 'Review requests and manage account access.' : adminSection === 'teams' ? 'Choose supervisors and manage their teams.' : 'See how agents use the tracker and how the app responds.']
   };
   const [label,title,description] = titles[view];
   $('breadcrumb-label').textContent=label;
@@ -324,13 +332,13 @@ function showDialog(title,content){$('dialog-content').innerHTML=`<div class="di
 /** Explain the exact implemented reporting rules without claiming official company definitions. */
 function showHelp() {
   showDialog('How your numbers work', `
-    <div class="rule-example"><strong>Three services, two kept</strong><p>A customer keeps video and voice and disconnects internet. The account gets <span class="badge downgrade">TP → DP</span>. Video and voice each earn a save. Internet records a loss. The play and bundle rates stay the same.</p></div>
-    <div class="help-rule"><strong>Single, double and triple play</strong><p>Keeping every original service earns SPS, DPS or TPS. Disconnecting every original service earns SPD, DPD or TPD. The starting service count determines the play. A full save or disconnect on two or more services also enters the bundle rate.</p>
-    <p>Partial saves show how the original service count changed (DP → SP, TP → DP or TP → SP). Four starting services count as triple play (3+), so four reduced to three displays as TP (4 → 3). Downgrades affect the individual services and are excluded from all play and bundle rates.</p></div>
+    <div class="rule-example"><strong>Three services, two kept</strong><p>A customer keeps video and voice and disconnects internet. The account gets <span class="badge downgrade">TP → DP</span>. Video and voice each earn a save. Internet records a loss. The play rates stay the same.</p></div>
+    <div class="help-rule"><strong>Single, double and triple play</strong><p>Keeping every original service earns SPS, DPS or TPS. Disconnecting every original service earns SPD, DPD or TPD. The starting service count determines the play. TPS requires exactly three starting services.</p>
+    <p>Partial saves show how the original service count changed (DP → SP, TP → DP or TP → SP). Four-service accounts and partial bundle saves are excluded from SPS, DPS and TPS.</p></div>
     <div class="help-rule"><strong>Services kept, disconnected or added</strong><p>Each account contributes one opportunity per original service. Keeping it earns a save. Adding a new service also earns one save and one opportunity for that service. An addition leaves the original play result intact.</p></div>
     <div class="help-rule"><strong>Multiple accounts and washes</strong><p>Log every account handled on a call together. When two accounts start with the same service mix and one is fully saved while the other fully disconnects, they pair as a wash. Their original services and plays are excluded from save rates. Other accounts and added services still count.</p>
-    <p>Overall save rate is the share of eligible calls that kept at least one original service on an unpaired account. Each call with an unpaired account enters the denominator once.</p></div>
-    <div class="help-rule"><strong>Mobile orders and lines</strong><p>One order can contain 1–12 lines. Two orders with three lines each count as two orders and six lines. Both rates divide by all logged calls, including washes. The first order on an account that started without Mobile also earns one mobile service save.</p></div>
+    <p>Subscriber save counts each eligible account that kept at least one original service. SP Internet measures retention on accounts that started with internet only.</p></div>
+    <div class="help-rule"><strong>Mobile orders and lines</strong><p>One order can contain 1–12 lines. Two orders with three lines each count as two orders and six lines. Both rates divide by all logged calls, including washes. Mobile line save uses ending lines capped at starting lines, divided by starting lines. Accounts without recorded balances and wash pairs are excluded. A replacement sale leaves a 3-to-3 balance at 100%.</p></div>
     <div class="help-rule"><strong>Daily goals</strong><p>Reports use Eastern time. Each ring closes when its rate reaches your target. Remaining saves assume every next eligible account or call succeeds. Sales estimates assume one new order or line per next call.</p></div>
     ${watchingTeam() ? '<div class="help-rule"><strong>Team reports</strong><p>Select the team name to combine the current roster’s counts for each date. Rates use combined successes and opportunities. Each metric with the same target for every member shows progress toward that shared goal.</p></div>' : ''}
     <div class="help-rule"><strong>Saved history</strong><p>Each submission updates your daily totals in Supabase. Accounts with the same outcome and service tags share a row. Mobile orders and lines have their own daily total. Refresh or sign in on another device to see confirmed saves. In your call log, choose Edit call to change one call’s services, accounts, mobile sales or report date, or remove the call. When several calls share a date, confirm which outcomes and sales belonged to yours. Use Edit day totals for a bulk correction.</p></div>
@@ -338,7 +346,7 @@ function showHelp() {
 }
 /** Show the numerator, denominator, and assumptions behind a circle. */
 function showMetric(key) {
-  const m = metricsForDay(currentDay(),state.goals).find(metric => metric.key === key);
+  const m = reportMetrics(currentDay(),state.goals).find(metric => metric.key === key);
   if (!m || !ready) return;
   let advice;
   if (m.goal === null) {
@@ -579,7 +587,7 @@ function invalidAuthField(id,message) {
 }
 /** Clear one account's data before displaying another account or the sign-in form. */
 function showSignIn(message=''){
- sessionEpoch++;sessionRequest++;sessionUser=null;authMode='login';ready=false;repo?.close();repo=null;busy=false;pendingRead=null;state=emptyState();closeEntry();$('detail-dialog').close();entry.reset();games.closeSession();teamGoals.reset();applyRole({role:'agent',agents:[]});clearAdminReport();renderDashboard();$('workspace-view').hidden=true;$('auth-view').hidden=false;$('toast').hidden=true;clearTimeout(toastTimer);$('password').value='';$('auth-status').textContent='';renderAuth();setAuthBusy(false);authMessage(message);
+ sessionEpoch++;sessionRequest++;sessionUser=null;authMode='login';ready=false;repo?.close();repo=null;busy=false;pendingRead=null;state=emptyState();closeEntry();$('detail-dialog').close();entry.reset();games.closeSession(); adminGames.clear();teamGoals.reset();applyRole({role:'agent',agents:[]});clearAdminReport();renderDashboard();$('workspace-view').hidden=true;$('auth-view').hidden=false;$('toast').hidden=true;clearTimeout(toastTimer);$('password').value='';$('auth-status').textContent='';renderAuth();setAuthBusy(false);authMessage(message);
 }
 async function enterWorkspace(user){
  const epoch=++sessionEpoch;
@@ -700,7 +708,7 @@ $('team-agent-list').addEventListener('click',event => {
   if (button) selectReport(button.dataset.agentId);
 });
 $('refresh-admin').addEventListener('click',loadAdminStats);
-for (const section of ['accounts','performance','teams']) {
+for (const section of ['accounts','performance','teams','games']) {
   $('admin-open-'+section).addEventListener('click',() => {
     if (section === adminSection) return;
     setAdminSection(section);

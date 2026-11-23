@@ -51,6 +51,7 @@ beforeEach(async () => {
       ids[name] = user.id;
     }
   }
+  for (const leader of [ids.alpha,ids.beta,ids.spare]) await rpc('workspace_game_access',ids.owner,leader,'bingo',true);
   await rpc('workspace_admin_save_team', ids.owner, ids.alpha, 'First', null);
   await rpc('workspace_admin_add_team_members', ids.owner, ids.alpha, JSON.stringify([member('ann'),member('ben')]));
   await rpc('workspace_admin_save_team', ids.owner, ids.beta, 'Second', null);

@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="tally-history.css">
   <link rel="stylesheet" href="entry.css">
   <link rel="stylesheet" href="team.css">
-  <link rel="stylesheet" href="games.css">
+  <link rel="stylesheet" href="games.css"><link rel="stylesheet" href="arcade.css">
   <link rel="stylesheet" href="auth.css">
   <link rel="stylesheet" href="accounts.css">
   <script type="module" src="app.js"></script>
@@ -126,6 +126,7 @@
                 </div>
                 <fieldset class="start-services"><legend>Services at the start</legend><div id="start-services" class="service-selector"></div></fieldset>
                 <fieldset class="end-services"><legend>What did they keep?</legend><div id="end-services"></div></fieldset>
+                <fieldset id="line-balances" hidden><legend>Mobile lines on this account</legend><div class="games-dates"><label>Started with<input id="line-start" type="number" min="1" max="999" step="1" required></label><label>Ended with<input id="line-end" type="number" min="0" max="999" step="1" required></label></div></fieldset>
                 <details class="added-services" id="added-services-section" hidden><summary>Services added <span id="added-count"></span></summary><div id="added-services" class="added-options" role="group" aria-label="Services added during this call"></div></details>
                 <button type="button" class="text-button add-an-account" data-action="add-account"><span data-icon="plus"></span>Add another account</button>
                 <section class="mobile-orders-section" aria-labelledby="mobile-orders-title">
@@ -173,6 +174,7 @@
           <button id="admin-open-performance" type="button" aria-controls="admin-performance" aria-current="page">Performance</button>
           <button id="admin-open-accounts" type="button" aria-controls="admin-accounts">Accounts</button>
           <button id="admin-open-teams" type="button" aria-controls="admin-teams">Teams</button>
+          <button id="admin-open-games" type="button" aria-controls="admin-games">Games</button>
         </nav>
         <section id="admin-performance" aria-label="Performance">
         <p id="admin-status" class="team-secondary" role="status"></p>
@@ -223,6 +225,7 @@
             </form>
           </dialog>
         </section>
+        <section id="admin-games" hidden aria-label="Games"></section>
         <section id="admin-accounts" aria-label="Accounts" hidden>
           <p id="accounts-status" class="accounts-status" role="status"></p>
           <p id="accounts-error" class="team-error" role="alert"></p>

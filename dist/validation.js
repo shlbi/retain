@@ -167,7 +167,7 @@ export function validateGoals(value, version = SCHEMA_VERSION) {
   if (![2,SCHEMA_VERSION].includes(version)) throw new StorageError('VALIDATION', 'Unsupported goals schema version.');
   const goals = {};
   for (const key of Object.keys(DEFAULT_GOALS)) {
-    const introducedLater = key === 'bundle' || (version === 2 && key === 'orders');
+    const introducedLater = ['bundle','lineSave','subscriber','exactTp','spInternet'].includes(key) || (version === 2 && key === 'orders');
     const candidate = introducedLater && value[key] === undefined ? DEFAULT_GOALS[key] : value[key];
     goals[key] = validateGoalPercentage(key, candidate);
   }

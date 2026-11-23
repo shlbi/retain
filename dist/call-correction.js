@@ -4,7 +4,7 @@ import { validateDayTotals, validateTallyUpdate } from './tally-validation.js';
 import { StorageError, validDay } from './validation.js';
 
 const counters = ['calls','eligibleCalls','savedCalls','saleCalls','mobileOrders','mobileLines'];
-const groupKey = g => JSON.stringify([g.before,g.kept,g.added,g.washed]);
+const groupKey = g => JSON.stringify([g.before,g.kept,g.added,g.washed,g.lineStart,g.lineEnd]);
 const invalid = message => { throw new StorageError('VALIDATION',message); };
 
 export function originalTally(groups, orders, lines) {

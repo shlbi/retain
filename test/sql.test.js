@@ -4,7 +4,9 @@ import { readFile, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { tallyForCall, groupsFromDays } from '../dist/tally.js';
 import { PGlite } from '@electric-sql/pglite';
-import { DEFAULT_GOALS } from '../dist/model.js';
+import { DEFAULT_GOALS as CURRENT_GOALS } from '../dist/model.js';
+// This suite exercises the original version-3 migration and its archived backup contract.
+const DEFAULT_GOALS = {overall:85,internet:85,tv:75,phone:80,mobile:75,sp:80,dp:80,tp:80,bundle:80,orders:20,sales:20};
 import { MAX_BACKUP_BYTES, validateCall } from '../dist/validation.js';
 
 const tallyMigration = '20261113033103_grouped_tallies.sql';
@@ -277,7 +279,7 @@ test('SQL migrates and serves grouped daily tallies and retires raw call access'
 
   await t.test('backfill agrees with model and exposes only counts, tags and goals',async()=>{
     const migrated=await read(user);
-    assert.deepEqual(migrated.goals,{...DEFAULT_GOALS,tp:88});
+    assert.deepEqual(migrated.goals,{...CURRENT_GOALS,tp:88,exactTp:88});
     assert.deepEqual(migrated.days.map(sort),[initial]);
     assert.equal(migrated.version,4);
     assert.deepEqual((await read(other)).days,[]);

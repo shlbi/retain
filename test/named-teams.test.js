@@ -51,6 +51,7 @@ before(async()=>{
     }
     await db.exec('begin;'+await readFile(new URL(file,dir),'utf8')+'commit;');
   }
+  for (const leader of [users.other,users.legacy]) await rpc('workspace_game_access',users.owner,leader,'bingo',true);
 });
 after(async()=>{await db?.close()});
 
@@ -129,6 +130,7 @@ test('a legacy single-agent assignment provisions a unique team; empty superviso
 
 test('a demoted supervisor can only see and score in their assigned team; promotion reactivates the same prior team',async()=>{
   await createUser('keeper','supervisor');
+  await rpc('workspace_game_access',users.owner,users.keeper,'bingo',true);
   await createUser('recruit','agent');
   await createUser('fresh','supervisor');
   await save('keeper','Northern');

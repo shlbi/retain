@@ -12,7 +12,7 @@ const numberField = (key,label,value,min,max) => '<label>'+label+'<input require
 function description(group) {
   const outcome = classifyAccount(group);
   if (!outcome) return 'Choose starting services';
-  return [group.washed && 'Wash', outcome.code, ...SERVICES.flatMap(s =>
+  return [group.washed && 'Wash', outcome.code,group.lineStart!==undefined && ('Mobile lines '+group.lineStart+' → '+group.lineEnd), ...SERVICES.flatMap(s =>
     outcome.kept.includes(s.key) ? [s.short+' kept'] : outcome.disconnected.includes(s.key) ? [s.short+' disconnected']
     : outcome.added.includes(s.key) ? [s.short+' added'] : [])].filter(Boolean).join(' · ');
 }
@@ -22,6 +22,9 @@ function serviceButtons(keys, selected, action) {
     '" aria-pressed="'+selected.includes(s.key)+'">'+s.short+'</button>').join('');
 }
 
+function balanceInputs(a,i) {
+  return ['lineStart','lineEnd'].map((key,j) => '<label>'+['Starting lines','Ending lines'][j]+'<input type="number" min="'+(j ? 0 : 1)+'" max="999" name="'+key+i+'" value="'+(a[key] ?? '')+'" placeholder="Unknown"></label>').join('');
+}
 function accountCard(account, i, length) {
   const kept = SERVICES.filter(s => account.before.includes(s.key));
   const available = SERVICES.filter(s => !account.before.includes(s.key) && s.key !== 'mobile');
@@ -33,6 +36,7 @@ function accountCard(account, i, length) {
         '" value="'+s.key+'" aria-pressed="'+(account.kept.includes(s.key) === !j)+'">'+label+'</button>').join('')+
       '</div></div>').join('')+
     (available.length && kept.length ? '<span>Services added</span><div class="correction-options">'+serviceButtons(available,account.added,'added')+'</div>' : '')+
+    (account.before.includes('mobile') ? balanceInputs(account,i) : '')+
     (account.count > 1 ? numberField('quantity-'+i,'Matching accounts',account.count,1,2147483647) : '')+
     '</fieldset>';
 }
@@ -132,7 +136,11 @@ export function openCallEditor({source, days, groupIndex, showDialog, close, sav
       destinationDay = data.get('day');
       newOrders = Number(data.get('orders'));
       newLines = Number(data.get('lines'));
-      accounts.forEach((a,i) => { if (data.has('quantity-'+i)) a.count = Number(data.get('quantity-'+i)); });
+      accounts.forEach((a,i) => { if (a.before.includes('mobile') && data.get('lineStart'+i) !== '' && data.get('lineStart'+i) !== null) {
+        a.lineStart = Number(data.get('lineStart'+i)); a.lineEnd = data.get('lineEnd'+i) === '' ? a.lineStart : Number(data.get('lineEnd'+i));
+        a.kept = a.kept.filter(k => k !== 'mobile'); if (a.lineEnd) a.kept.push('mobile');
+      } else { delete a.lineStart; delete a.lineEnd; }
+      if (data.has('quantity-'+i)) a.count = Number(data.get('quantity-'+i)); });
     }
   }
 
@@ -149,6 +157,7 @@ export function openCallEditor({source, days, groupIndex, showDialog, close, sav
       const account = accounts[index];
       if (service === 'before') {
         account.before = toggle(account.before,key);
+        if (key === 'mobile') { delete account.lineStart; delete account.lineEnd; }
         account.kept = account.kept.filter(s => s !== key);
         if (account.before.includes(key)) account.kept.push(key);
         account.added = account.added.filter(s => s !== key);
@@ -156,6 +165,7 @@ export function openCallEditor({source, days, groupIndex, showDialog, close, sav
       else {
         account.kept = account.kept.filter(s => s !== key);
         if (service === 'keep') account.kept.push(key);
+        if (key === 'mobile' && account.lineStart) account.lineEnd = service === 'keep' ? account.lineStart : 0;
       }
     } else if (button.dataset.sale) {
       sale = button.dataset.sale;

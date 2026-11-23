@@ -40,6 +40,7 @@ before(async()=>{
   await db.query("update workspace_private.users set supervisor_id=$1 where id in ($2,$3,$4,$5,$6)",
     [team.sue,team.amber,team.jane,team.kai,team.ali,team.saif]);
   await db.query('update workspace_private.users set supervisor_id=$1 where id=$2',[team.lee,team.maya]);
+  for (const supervisor of [team.sue,team.lee]) await rpc('workspace_game_access',team.saif,supervisor,'bingo',true);
 });
 after(async()=>await db.close());
 
@@ -156,4 +157,47 @@ test('realtime uses empty invalidations and abandons the old topic when a player
   const prior=(await status('saif')).me.stats.calls;
   await tally('saif',sale);
   assert.equal((await status('saif')).me.stats.calls,prior+1);
+});
+
+test('admin grants, concurrent moves and checkpoint scoring stay scoped to the current team',async()=>{
+  const day=dayKey(), config={metric:'savedCalls',bonus:'mobileOrders',target:1,mode:'Standard'};
+  const game={...board,title:'Tower',startsAt:new Date(Date.now()-5000).toISOString(),endsAt:new Date(Date.now()+300000).toISOString()};
+  await db.exec('delete from workspace_private.bingo_games');
+  const schedule=()=>rpc('workspace_arcade_launch',team.sue,team.sue,'elevator',config,game);
+  await assert.rejects(schedule(),/FORBIDDEN/);
+  await assert.rejects(rpc('workspace_game_access',team.lee,team.sue,'elevator',true),/FORBIDDEN/);
+  await rpc('workspace_game_access',team.saif,team.sue,'elevator',true);
+  assert.ok((await rpc('workspace_game_library',team.sue)).games.includes('elevator'));
+  assert.ok(!(await rpc('workspace_game_library',team.lee)).games.includes('elevator'));
+  await schedule();await rpc('workspace_game_access',team.saif,team.sue,'elevator',false);
+  await assert.rejects(schedule(),/FORBIDDEN/);
+  const snap=()=>rpc('workspace_arcade_snapshot',team.amber);
+  let s=await snap();assert.equal(s.kind,'elevator');assert.equal((await rpc('workspace_arcade_snapshot',team.maya)).game,null);
+  const world={[team.amber]:{ride:{calls:0,primary:0,bonus:0}}};
+  const move=(u,v)=>rpc('workspace_arcade_move',team[u],s.game.id,v,world);
+  assert.equal(await move('maya',s.revision),false);assert.equal(await move('amber',s.revision),true);assert.equal(await move('amber',s.revision),false);
+  const token=randomUUID();await tally('amber',sale,token,day);await tally('amber',sale,token,day);
+  s=await snap();assert.equal(s.world[team.amber].floor,1);assert.equal(s.world[team.amber].ride,undefined);
+  assert.equal(s.players.find(p=>p.id===team.amber).stats.calls,1);
+  for (const role of ['anon','authenticated']) {
+    const {rows:[row]}=await db.query("select has_function_privilege($1,'public.workspace_arcade_snapshot(uuid)','execute') as allowed",[role]);
+    assert.equal(row.allowed,false);
+  }
+});
+
+test('The Belt counts only calls inside each duel and starts a fresh quota for the defending champion',async()=>{
+  await db.exec('delete from workspace_private.bingo_games');
+  const config={metric:'savedCalls',bonus:'mobileOrders',target:1,mode:'Standard'};
+  const game={...board,title:'The Belt',startsAt:new Date(Date.now()-4000).toISOString(),endsAt:new Date(Date.now()+300000).toISOString()};
+  await rpc('workspace_arcade_launch',team.saif,team.sue,'belt',config,game);
+  const snapshot=()=>rpc('workspace_arcade_snapshot',team.sue);
+  const [champ,rival,next]= (await snapshot()).players;
+  const hit=async p=>rpc('workspace_tally',p.id,dayKey(),sale,randomUUID());
+  await hit(next);await hit(champ);await hit(champ);await hit(rival);
+  let d=(await snapshot()).world.duel;
+  assert.equal(d.champ,champ.id);assert.equal(d.opponent,next.id);assert.deepEqual(d.scores,{});
+  await hit(next);
+  d=(await snapshot()).world.duel;
+  assert.equal(d.scores[next.id].calls,1);assert.equal(d.scores[next.id].points,3);
+  assert.equal(d.scores[champ.id],undefined);
 });

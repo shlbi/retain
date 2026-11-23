@@ -26,6 +26,8 @@ The grouped migration by itself leaves legacy calls in a private archive. To ret
 
 This app uses Supabase Postgres with its own username/password authentication. Supabase Auth email settings do not affect signup.
 
+Apply both the **line_balances** and **game_library** migrations for the illustrated game catalog and line-based reporting. Verify that Admin → Games lists 19 games. Enable one for a test supervisor, open Games → Game library as that supervisor, and confirm that an agent can see the scheduled board. Check a 3-to-2 mobile entry on the agent and team dashboards.
+
 ## 2. Set Vercel server environment variables
 
 In the Vercel project's Environment Variables settings, add:
